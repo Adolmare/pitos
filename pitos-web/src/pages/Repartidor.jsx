@@ -191,8 +191,17 @@ const Repartidor = () => {
                             className="space-y-6"
                         >
                             <div className="text-center p-4 bg-yellow-500/10 rounded-xl border border-yellow-500/30">
-                                <h3 className="text-xl font-bold text-white mb-2">Verificación</h3>
-                                <p className="text-sm text-neutral-400">El sistema detectó este monto. <br/>Corrígelo si es necesario.</p>
+                                <h3 className="text-xl font-bold text-white mb-1">Verifica el Monto</h3>
+                                <p className="text-sm text-neutral-400">Corrige si el valor detectado no coincide con la imagen.</p>
+                            </div>
+
+                            {/* Image Preview for Verification */}
+                            <div className="bg-black/50 p-4 rounded-xl border border-white/10 flex justify-center">
+                                <img 
+                                    src={preview || (scanResult?.imageUrl ? `${scanResult.imageUrl}?token=${user.token}` : '')} 
+                                    alt="Comprobante a verificar" 
+                                    className="max-h-60 object-contain rounded-lg"
+                                />
                             </div>
 
                             <div className="space-y-2">

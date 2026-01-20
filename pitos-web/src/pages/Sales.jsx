@@ -39,7 +39,17 @@ const Sales = () => {
 
     const fetchSales = async () => {
         try {
-            const res = await fetch('http://localhost:3000/api/sales');
+            const token = localStorage.getItem('token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+            
+            const res = await fetch('http://localhost:3000/api/sales', { headers });
+            
+            if (res.status === 401 || res.status === 403) {
+                 console.error("No autorizado");
+                 // Handle auth error (redirect to login?)
+                 return;
+            }
+
             const data = await res.json();
             setSalesData(data);
             setLoading(false);
@@ -288,7 +298,7 @@ const Sales = () => {
                             </div>
                             <div className="p-4 bg-black flex items-center justify-center overflow-auto flex-1">
                                 <img 
-                                    src={selectedReceipt.imageUrl} 
+                                    src={`${selectedReceipt.imageUrl}?token=${localStorage.getItem('token')}`} 
                                     alt="Comprobante" 
                                     className="max-w-full max-h-[60vh] object-contain rounded-lg"
                                 />

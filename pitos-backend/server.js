@@ -4,8 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const multer = require('multer');
-const Tesseract = require('tesseract.js');
-const { createWorker } = Tesseract;
+const { createWorker } = require('tesseract.js');
 const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
@@ -13,6 +12,12 @@ const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const morgan = require('morgan');
 const winston = require('winston');
+let sharp;
+try {
+    sharp = require('sharp');
+} catch (e) {
+    console.error('Sharp failed to load. Image processing will be skipped. (Module not found or platform mismatch)');
+}
 const initialMenu = require('./initialData');
 
 // --- 1. CONFIGURATION & LOGGING (Problem D) ---
@@ -41,7 +46,9 @@ app.use(morgan('combined', { stream: { write: message => logger.info(message.tri
 
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-app.use('/uploads', express.static(uploadDir));
+
+// Protect uploads folder - Only authenticated users can access
+// app.use('/uploads', authenticateToken, express.static(uploadDir)); moved below middleware definitions
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
@@ -66,7 +73,13 @@ let receipts = []; // Receipt logs
 // --- 3. MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    let token = authHeader && authHeader.split(' ')[1];
+    
+    // Allow token in query param for images/downloads
+    if (!token && req.query.token) {
+        token = req.query.token;
+    }
+
     if (!token) return res.sendStatus(401);
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -80,6 +93,9 @@ const authorizeRole = (roles) => (req, res, next) => {
     if (!roles.includes(req.user.role)) return res.sendStatus(403);
     next();
 };
+
+// Protect uploads folder - Only authenticated users can access
+app.use('/uploads', authenticateToken, express.static(uploadDir));
 
 // --- VALIDATION SCHEMAS (Problem C) ---
 const orderSchema = z.object({
@@ -229,18 +245,29 @@ app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'a
 
     try {
         logger.info(`Scanning receipt: ${req.file.path}`);
-        const { data: { text } } = await Tesseract.recognize(req.file.path, 'eng');
+
+        // Pre-process image with Sharp for better OCR
+        const processedPath = `${req.file.path}-processed.png`;
+        try {
+            await sharp(req.file.path)
+                .grayscale()
+                .normalize()
+                .sharpen()
+                .toFile(processedPath);
+        } catch (sharpError) {
+             logger.error(`Sharp processing failed (using original): ${sharpError.message}`);
+             fs.copyFileSync(req.file.path, processedPath);
+        }
+
+        const worker = await createWorker('eng');
+        const { data: { text } } = await worker.recognize(processedPath);
+        await worker.terminate();
+        
+        // Clean up processed file
+        if (fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
         
         // OCR Logic
-        const lines = text.split('\n');
-        let foundAmount = 0;
-        const moneyRegex = /(\d+[\.,]\d{2})/; 
-        const totalLine = lines.find(line => line.toLowerCase().includes('total'));
-        
-        if (totalLine) {
-            const match = totalLine.match(moneyRegex);
-            if (match) foundAmount = parseFloat(match[1].replace(',', '.'));
-        }
+        const foundAmount = extraerMonto(text) || 0;
 
         const imageUrl = `http://localhost:3000/uploads/${req.file.filename}`;
         
@@ -299,13 +326,38 @@ function extraerMonto(text) {
 
 app.post('/api/repartidor/validar-pago', upload.single('screenshot'), async (req, res) => {
   try {
+    // 1. Pre-procesar imagen con Sharp (Grayscale, High Contrast)
+    const processedPath = `${req.file.path}-processed.png`;
+    
+    if (sharp) {
+        try {
+            await sharp(req.file.path)
+                .resize(1000) // Redimensionar si es muy grande/pequeña para estandarizar
+                .grayscale()
+                .normalize()
+                .sharpen()
+                .toFile(processedPath);
+        } catch (sharpErr) {
+            logger.error(`Sharp processing error: ${sharpErr.message}`);
+            // Fallback to original if sharp fails
+            if (fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
+            fs.copyFileSync(req.file.path, processedPath);
+        }
+    } else {
+        // Fallback if sharp module is missing
+        fs.copyFileSync(req.file.path, processedPath);
+    }
+
     const worker = await createWorker('spa'); // Usamos español
     
-    // 1. Extraer texto de la imagen
-    const { data: { text } } = await worker.recognize(req.file.path);
+    // 2. Extraer texto de la imagen procesada
+    const { data: { text } } = await worker.recognize(processedPath);
     await worker.terminate();
 
-    // 2. Lógica para extraer el monto
+    // Limpiar archivo procesado
+    if (fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
+
+    // 3. Lógica para extraer el monto
     // Buscamos patrones comunes como "$ 50.000" o "Monto: 50000"
     // Esta regex busca números después de un símbolo de peso o palabras clave
     const montoEncontrado = extraerMonto(text);
