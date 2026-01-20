@@ -2,6 +2,25 @@ import React, { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { DollarSign, Receipt, TrendingUp, Calendar, ArrowLeft, ShoppingBag, Eye, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const socket = io('http://localhost:3000');
 
@@ -48,6 +67,46 @@ const Sales = () => {
             dateStyle: 'short',
             timeStyle: 'medium'
         });
+    };
+
+    const chartData = {
+        labels: salesData?.topProducts?.map(p => p.name) || [],
+        datasets: [
+            {
+                label: 'Cantidad Vendida',
+                data: salesData?.topProducts?.map(p => p.quantity) || [],
+                backgroundColor: 'rgba(234, 179, 8, 0.5)',
+                borderColor: 'rgba(234, 179, 8, 1)',
+                borderWidth: 1,
+            },
+        ],
+    };
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top',
+                labels: { color: '#9ca3af' }
+            },
+            title: {
+                display: true,
+                text: 'Platos Más Vendidos',
+                color: '#ffffff',
+                font: { size: 16 }
+            },
+        },
+        scales: {
+            y: {
+                ticks: { color: '#9ca3af' },
+                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+            },
+            x: {
+                ticks: { color: '#9ca3af' },
+                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+            }
+        }
     };
 
     return (
@@ -116,6 +175,13 @@ const Sales = () => {
                             {salesData.receipts?.length || 0} comprobantes verificados
                         </p>
                     </div>
+                </div>
+
+                {/* --- SECCIÓN CHART: GRÁFICA DE VENTAS --- */}
+                <div className="bg-neutral-800 p-6 rounded-2xl border border-white/10 mb-8 overflow-hidden">
+                     <div className="h-80 w-full">
+                        <Bar options={chartOptions} data={chartData} />
+                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

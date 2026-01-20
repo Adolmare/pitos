@@ -5,6 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const Tesseract = require('tesseract.js');
+const { createWorker } = Tesseract;
 const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
@@ -280,9 +281,54 @@ app.post('/api/confirm-receipt', authenticateToken, authorizeRole(['repartidor',
     res.json({ success: true, receipt });
 });
 
+// Variable para simular el acumulado (en producción iría a la DB)
+let totalTransacciones = 0;
+
+// Función auxiliar para limpiar el texto y sacar el número
+function extraerMonto(text) {
+  // Eliminamos puntos de miles y buscamos el valor numérico
+  // Ej: de "$ 45.000" queremos 45000
+  const matches = text.replace(/\./g, '').match(/\d+/g);
+  if (matches) {
+    // Filtramos números que parezcan montos (ej: más de 3 dígitos)
+    const montosPosibles = matches.map(Number).filter(n => n > 100);
+    return Math.max(...montosPosibles); // Retornamos el mayor encontrado
+  }
+  return null;
+}
+
+app.post('/api/repartidor/validar-pago', upload.single('screenshot'), async (req, res) => {
+  try {
+    const worker = await createWorker('spa'); // Usamos español
+    
+    // 1. Extraer texto de la imagen
+    const { data: { text } } = await worker.recognize(req.file.path);
+    await worker.terminate();
+
+    // 2. Lógica para extraer el monto
+    // Buscamos patrones comunes como "$ 50.000" o "Monto: 50000"
+    // Esta regex busca números después de un símbolo de peso o palabras clave
+    const montoEncontrado = extraerMonto(text);
+
+    if (montoEncontrado) {
+      totalTransacciones += montoEncontrado;
+      
+      // Aquí actualizarías el estado del pedido a "Pagado" en tu BD
+      res.json({ 
+        success: true, 
+        monto: montoEncontrado, 
+        totalAcumulado: totalTransacciones,
+        textoExtraido: text // Útil para depurar
+      });
+    } else {
+      res.status(400).json({ success: false, message: "No se pudo detectar el monto en la imagen" });
+    }
+  } catch (error) {
+    logger.error(`Error validando pago: ${error.message}`); // Added logging
+    res.status(500).json({ error: error.message });
+  }
+});
+
 server.listen(PORT, () => {
   logger.info(`Backend Server running on port ${PORT}`);
 });
-
-// Server is already listening at the top of the file
-
