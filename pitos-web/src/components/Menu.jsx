@@ -1,46 +1,64 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, Star, Plus } from 'lucide-react';
-import { CATEGORIES, MENU_ITEMS } from '../data/menu';
+import { Star, Plus } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 
 const Menu = () => {
-  const [activeCategory, setActiveCategory] = useState('all');
+  const [activeCategory, setActiveCategory] = useState({ id: 'Todos' });
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const { addToCart } = useCart();
 
-  const filteredItems = activeCategory === 'all' 
-    ? MENU_ITEMS 
-    : MENU_ITEMS.filter(item => item.category === activeCategory);
+  useEffect(() => {
+    fetch('http://localhost:3000/api/products')
+      .then(res => res.json())
+      .then(data => {
+        setProducts(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
 
+  const uniqueCategories = ['Todos', ...new Set(products.map(p => p.category))];
+  const categories = uniqueCategories.map(c => ({ id: c, name: c }));
+
+  const currentCategory = activeCategory.id || 'Todos';
+
+  const filteredItems = currentCategory === 'Todos' 
+    ? products 
+    : products.filter(item => item.category === currentCategory);
+
+  if (loading) return <div className="py-20 text-center text-white">Cargando menú...</div>;
 
   return (
     <div id="menu" className="py-20 px-4 max-w-7xl mx-auto scroll-mt-20">
       <div className="text-center mb-16">
-        <h2 className="text-4xl font-bold mb-4">Nuestro <span className="text-red-600">Menú</span></h2>
+        <h2 className="text-4xl font-bold mb-4 text-white">Nuestro <span className="text-red-600">Menú</span></h2>
         <div className="w-24 h-1 bg-yellow-500 mx-auto rounded-full" />
       </div>
 
-      {/* Categories */}
       <div className="flex flex-wrap justify-center gap-3 mb-16">
-        {CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat.id}
-            onClick={() => setActiveCategory(cat.id)}
+            onClick={() => setActiveCategory(cat)}
             className={`px-8 py-3 rounded-full font-bold tracking-wide transition-all duration-300 cursor-pointer overflow-hidden relative group ${
-              activeCategory === cat.id 
+              currentCategory === cat.id 
                 ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white shadow-[0_0_20px_rgba(220,38,38,0.4)] scale-110' 
                 : 'bg-neutral-800/80 text-gray-400 hover:text-white border border-white/5 hover:border-white/20'
             }`}
           >
              <span className="relative z-10">{cat.name}</span>
-             {activeCategory !== cat.id && (
+             {currentCategory !== cat.id && (
                <div className="absolute inset-0 bg-white/5 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300" />
              )}
           </button>
         ))}
       </div>
 
-      {/* Grid Items */}
       <motion.div 
         layout
         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-10"
@@ -56,7 +74,6 @@ const Menu = () => {
               transition={{ duration: 0.4 }}
               className="bg-neutral-900/60 backdrop-blur-md rounded-3xl overflow-hidden group hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(0,0,0,0.4)] transition-all duration-300 border border-white/5 relative"
             >
-              {/* Image Container with Overlay */}
               <div className="relative h-64 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10 opacity-60" />
                 <img 
