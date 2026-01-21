@@ -7,8 +7,8 @@ const Footer = () => {
       <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
         <div>
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center text-black font-bold border border-red-600">P</div>
-            <span className="font-bold text-xl">PITOS PIZZA</span>
+            <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center text-black font-bold border border-red-600">R</div>
+            <span className="font-bold text-xl">RESTAURANTE</span>
           </div>
           <p className="text-gray-400 text-sm mb-4">
             #1 En Calidad y Precios Bajos. <br/>
@@ -45,7 +45,7 @@ const Footer = () => {
         </div>
       </div>
       <div className="text-center mt-12 pt-8 border-t border-white/5 text-gray-500 text-sm">
-        © {new Date().getFullYear()} Pitos Pizza. Desarrollado por Devlfo.
+        © {new Date().getFullYear()} Restaurante. Desarrollado por Devlfo.
       </div>
     </footer>
   );

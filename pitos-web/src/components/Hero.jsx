@@ -1,103 +1,155 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 const Hero = () => {
-  return (
-    <div id="inicio" className="relative w-full h-screen flex items-center justify-center overflow-hidden pt-20">
-      {/* Background Image with Overlay */}
-      <div className="absolute inset-0 z-0">
-        <motion.div 
-          initial={{ scale: 1.1 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 10, repeat: Infinity, repeatType: "reverse" }}
-          className="w-full h-full"
-        >
-          <img 
-            src="https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1920&q=80" 
-            alt="Pizza Background" 
-            fetchPriority="high"
-            loading="eager"
-            className="w-full h-full object-cover opacity-20 contrast-125 saturate-50"
-          />
-        </motion.div>
-        {/* Dynamic Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-black/20 via-black/80 to-red-900/10 mix-blend-multiply" />
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-150 contrast-150 mix-blend-overlay"></div>
-      </div>
+  const [isRestaurantOpen, setIsRestaurantOpen] = useState(true);
 
-      <div className="relative z-10 text-center px-4 max-w-5xl mx-auto">
-        <motion.div
-           initial={{ opacity: 0, y: 50 }}
-           animate={{ opacity: 1, y: 0 }}
-           transition={{ duration: 0.8, ease: "easeOut" }}
+  useEffect(() => {
+    fetch('http://localhost:3000/api/status')
+      .then(res => res.json())
+      .then(data => setIsRestaurantOpen(data.isOpen))
+      .catch(err => console.error(err));
+
+      // Poll status every 30s to keep it updated for users
+      const interval = setInterval(() => {
+        fetch('http://localhost:3000/api/status')
+        .then(res => res.json())
+        .then(data => setIsRestaurantOpen(data.isOpen))
+        .catch(err => console.error(err));
+      }, 30000);
+      return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <section id="inicio" className="relative w-full min-h-[100vh] lg:min-h-screen flex items-center bg-[#0f0f0f] overflow-hidden pt-24 pb-12 lg:py-0">
+      
+      {/* Background Gradients - Fresh & Modern approach with cleaner glows */}
+      <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-red-600/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-orange-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+      <div className="container mx-auto px-6 md:px-12 relative z-10 grid lg:grid-cols-2 gap-12 lg:gap-8 items-center h-full">
+        
+        {/* Left Column: Content */}
+        <motion.div 
+          initial={{ opacity: 0, x: -50 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="flex flex-col items-center lg:items-start text-center lg:text-left order-2 lg:order-1"
         >
+          {/* Status Badge */}
           <motion.div 
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.5 }}
-            className="inline-block mb-8 relative"
+             initial={{ opacity: 0, y: 10 }}
+             animate={{ opacity: 1, y: 0 }}
+             transition={{ delay: 0.2 }}
+             className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border backdrop-blur-md mb-8 group transition-colors cursor-default ${isRestaurantOpen ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'}`}
           >
-             <span className="text-yellow-400 font-extrabold tracking-widest uppercase py-3 px-8 border border-yellow-500/30 rounded-full bg-black/60 backdrop-blur-md shadow-[0_0_30px_rgba(234,179,8,0.2)]">
-              Comidas Rápidas & Pizzería
+            <span className="relative flex h-3 w-3">
+              {isRestaurantOpen && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>}
+              <span className={`relative inline-flex rounded-full h-3 w-3 ${isRestaurantOpen ? 'bg-green-500' : 'bg-red-500'}`}></span>
             </span>
-             <motion.div 
-                className="absolute -top-8 -right-8 text-6xl drop-shadow-lg filter"
-                animate={{ rotate: 15, y: [0, -15, 0] }}
-                transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-             >
-               🍕
-             </motion.div>
+            <span className="text-gray-300 text-sm font-semibold tracking-wide group-hover:text-white transition-colors">
+              {isRestaurantOpen ? 'Abierto ahora • Servicio Rápido' : 'Cerrado • Abre pronto'}
+            </span>
           </motion.div>
 
-          <h1 className="text-5xl sm:text-7xl md:text-8xl lg:text-9xl font-black mb-8 leading-[0.9] drop-shadow-2xl tracking-tighter">
-            SABOR <br/> 
-            <span className="italic text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500">EXPLOSIVO</span>
+          <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black text-white leading-[1.1] mb-6 tracking-tight">
+            Comida que <br/>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 relative inline-block">
+              Enamora
+              {/* Modern Underline Decorator */}
+              <svg className="absolute w-[110%] h-3 -bottom-1 -left-1 text-red-500 selection:bg-none" viewBox="0 0 100 10" preserveAspectRatio="none">
+                 <path d="M0 5 Q 50 12 100 5" stroke="currentColor" strokeWidth="3" fill="none" />
+              </svg>
+            </span>
           </h1>
-          
-          <p className="text-xl md:text-2xl text-gray-300 mb-12 max-w-2xl mx-auto font-medium leading-relaxed">
-            La verdadera experiencia gastronómica de <strong className="text-white">Sahagún y Chinú</strong>. <br/> Calidad premium, precios de locura.
+
+          <p className="text-lg md:text-xl text-gray-400 mb-10 max-w-lg leading-relaxed">
+            La mejor comida rápida de <strong className="text-white">Sahagún y Chinú</strong>. Ingredientes frescos, sabor auténtico y precios increíbles.
           </p>
-          
-          <div className="flex flex-col sm:flex-row gap-6 justify-center items-center">
-            <motion.a 
+
+          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            <motion.a
               href="#menu"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-gradient-to-r from-red-600 to-orange-600 text-white px-10 py-5 rounded-full font-bold text-xl hover:from-red-500 hover:to-orange-500 transition shadow-[0_10px_40px_rgba(220,38,38,0.4)] flex items-center gap-3 group cursor-pointer border border-red-500/20"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="px-8 py-4 bg-red-600 rounded-2xl text-white font-bold text-lg shadow-lg hover:shadow-red-600/40 hover:bg-red-500 transition-all flex items-center justify-center gap-2"
             >
-              Hacer Pedido
-              <span className="group-hover:translate-x-1 transition-transform">→</span>
+              Ver Menú
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
             </motion.a>
-            
-            <motion.a 
-              href="#contacto"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="px-10 py-5 rounded-full font-bold text-xl text-white border border-white/10 bg-white/5 hover:bg-white/10 transition backdrop-blur-md cursor-pointer"
+            <motion.a
+               href="#nosotros"
+               whileHover={{ scale: 1.02 }}
+               whileTap={{ scale: 0.98 }}
+               className="px-8 py-4 rounded-2xl text-white font-bold text-lg border border-white/10 hover:bg-white/5 transition-colors text-center"
             >
-              Ver Ubicación
+              Cómo llegar
             </motion.a>
           </div>
         </motion.div>
+
+        {/* Right Column: Visual Interaction */}
+        <div className="relative h-[400px] sm:h-[500px] lg:h-[700px] w-full flex items-center justify-center lg:justify-end order-1 lg:order-2 perspective-1000">
+          <motion.div
+             initial={{ scale: 0.8, opacity: 0 }}
+             animate={{ scale: 1, opacity: 1 }}
+             transition={{ duration: 1, ease: "easeOut" }}
+             className="relative z-10 w-[300px] sm:w-[450px] lg:w-[600px] aspect-square"
+          > 
+             {/* Abstract Background Shape behind food */}
+             <div className="absolute inset-0 bg-gradient-to-tr from-red-600/20 to-orange-500/20 rounded-full blur-3xl animate-pulse" />
+             
+             {/* Spinning Circle Plate Border */}
+             <div className="absolute inset-4 sm:inset-10 border border-white/10 rounded-full animate-[spin_60s_linear_infinite]" />
+             
+             {/* Main Image - Using a really high quality cutout style */}
+             <motion.img 
+               animate={{ y: [-15, 15, -15] }}
+               transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+               src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=800&auto=format&fit=crop" 
+               alt="Delicious Burger" 
+               className="w-full h-full object-cover rounded-full shadow-2xl relative z-10"
+               style={{ 
+                 maskImage: 'radial-gradient(circle at center, black 60%, transparent 70%)', 
+                 WebkitMaskImage: 'radial-gradient(circle at center, black 60%, transparent 70%)' 
+               }}
+             />
+
+             {/* Floating 3D Cards */}
+             <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0, y: [0, -10, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+                className="absolute top-[10%] lg:right-0 right-[-10px] bg-black/60 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-3 z-20"
+             >
+                <div className="w-12 h-12 bg-yellow-500/20 rounded-xl flex items-center justify-center text-2xl">
+                  🌮
+                </div>
+                <div>
+                  <p className="text-white font-bold text-sm">Sabor Único</p>
+                  <p className="text-xs text-gray-400">Receta secreta</p>
+                </div>
+             </motion.div>
+
+             <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0, y: [0, 10, 0] }}
+                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 0.8 }}
+                className="absolute bottom-[20%] left-0 lg:-left-10 bg-black/60 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-3 z-20"
+             >
+                <div className="w-12 h-12 bg-red-500/20 rounded-xl flex items-center justify-center text-2xl">
+                  🔥
+                </div>
+                <div>
+                  <p className="text-white font-bold text-sm">Caliente & Fresco</p>
+                  <p className="text-xs text-gray-400">Preparado al instante</p>
+                </div>
+             </motion.div>
+
+          </motion.div>
+        </div>
       </div>
-      
-      {/* Decorative floating elements */}
-      <motion.div 
-        animate={{ y: [-20, 20, -20], rotate: [0, 10, -10, 0] }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute bottom-20 left-10 hidden lg:block opacity-30 invert blur-sm"
-      >
-        <img src="https://cdn-icons-png.flaticon.com/512/3075/3075977.png" className="w-32 h-32" alt="burger" />
-      </motion.div>
-      
-      <motion.div 
-        animate={{ y: [20, -20, 20], rotate: [0, -5, 5, 0] }}
-        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-40 right-10 hidden lg:block opacity-30 invert blur-sm"
-      >
-         <img src="https://cdn-icons-png.flaticon.com/512/1046/1046784.png" className="w-24 h-24" alt="fries" />
-      </motion.div>
-    </div>
+    </section>
   );
 };
 

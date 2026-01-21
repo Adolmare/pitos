@@ -12,7 +12,7 @@ export const MENU_ITEMS = [
   { id: 2, name: 'Pizza Mexicana', category: 'pizzas', price: 29000, description: 'Tocineta, cebolla, tomate, maíz, jalapeños.', image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=500&q=60' },
   
   // Comidas Rápidas
-  { id: 3, name: 'Perro Pitos', category: 'rapidas', price: 18000, description: 'Butifarra, pollo, chorizo, suizo, mozzarella, maíz.', image: 'https://images.unsplash.com/photo-1619250907693-518293673c09?auto=format&fit=crop&w=500&q=60' },
+  { id: 3, name: 'Perro de la Casa', category: 'rapidas', price: 18000, description: 'Butifarra, pollo, chorizo, suizo, mozzarella, maíz.', image: 'https://images.unsplash.com/photo-1619250907693-518293673c09?auto=format&fit=crop&w=500&q=60' },
   { id: 4, name: 'Salchipapa Super', category: 'rapidas', price: 20000, description: 'Butifarra, chorizo, salchicha, gratinada.', image: 'https://images.unsplash.com/photo-1585325701165-351af916e581?auto=format&fit=crop&w=500&q=60' },
   { id: 5, name: 'Hamburguesa Monster', category: 'rapidas', price: 43000, description: '3 carnes, pollo, cerdo, maduritos, gratinada.', image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=60' },
 

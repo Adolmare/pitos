@@ -20,7 +20,7 @@ try {
 }
 const initialMenu = require('./initialData');
 
-// --- 1. CONFIGURATION & LOGGING (Problem D) ---
+// --- 1. CONFIGURATION & LOGGING ---
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.json(),
@@ -47,28 +47,36 @@ app.use(morgan('combined', { stream: { write: message => logger.info(message.tri
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-// Protect uploads folder - Only authenticated users can access
-// app.use('/uploads', authenticateToken, express.static(uploadDir)); moved below middleware definitions
-
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + '-' + file.originalname)
 });
 const upload = multer({ storage: storage });
 
-// --- 2. DATA STORE (In-Memory for now, replacing DB) ---
-// Users (Problem B)
+// --- 2. DATA STORE ---
 const users = [
-    { id: 1, username: 'admin', passwordHash: bcrypt.hashSync('admin123', 8), role: 'admin' },
-    { id: 2, username: 'cocina', passwordHash: bcrypt.hashSync('cocina123', 8), role: 'cocina' },
-    { id: 3, username: 'reparto', passwordHash: bcrypt.hashSync('reparto123', 8), role: 'repartidor' }
+    { id: 1, username: 'admin', passwordHash: bcrypt.hashSync('adminMaster', 8), role: 'admin' },
+    { id: 2, username: 'cocina', passwordHash: bcrypt.hashSync('cocinaChef', 8), role: 'cocina' },
+    { id: 3, username: 'reparto', passwordHash: bcrypt.hashSync('repartoExpress', 8), role: 'repartidor' },
+    { id: 4, username: 'juan', passwordHash: bcrypt.hashSync('juan123', 8), role: 'repartidor' },
+    { id: 5, username: 'pedro', passwordHash: bcrypt.hashSync('pedro123', 8), role: 'repartidor' },
+    { id: 6, username: 'maria', passwordHash: bcrypt.hashSync('maria123', 8), role: 'repartidor' }
 ];
 
-// Product Catalog (Problem E)
 let products = [...initialMenu];
+let restaurantStatus = { isOpen: true };
 
 let orders = [];
-let receipts = []; // Receipt logs
+let receipts = [];
+
+let tables = Array.from({ length: 30 }, (_, i) => ({
+    id: i + 1,
+    name: `Mesa ${i + 1}`,
+    status: 'free',
+    items: [],
+    total: 0,
+    startTime: null
+}));
 
 // --- 3. MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
@@ -77,6 +85,11 @@ const authenticateToken = (req, res, next) => {
     
     // Allow token in query param for images/downloads
     if (!token && req.query.token) {
+        token = req.query.token;
+    }
+
+    if (!token) return res.sendStatus(401);
+if (!token && req.query.token) {
         token = req.query.token;
     }
 
@@ -94,10 +107,9 @@ const authorizeRole = (roles) => (req, res, next) => {
     next();
 };
 
-// Protect uploads folder - Only authenticated users can access
 app.use('/uploads', authenticateToken, express.static(uploadDir));
 
-// --- VALIDATION SCHEMAS (Problem C) ---
+// --- VALIDATION SCHEMAS ---
 const orderSchema = z.object({
     customer: z.object({
         name: z.string().min(1),
@@ -108,37 +120,39 @@ const orderSchema = z.object({
         notes: z.string().optional()
     }),
     items: z.array(z.object({
-        id: z.number(), // Product ID
+        id: z.number(), 
         quantity: z.number().min(1)
     }))
 });
 
 // --- ROUTES ---
 
-// Auth Routes (Problem B)
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     const user = users.find(u => u.username === username);
     
     if (user && bcrypt.compareSync(password, user.passwordHash)) {
         const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
-        res.json({ token, role: user.role });
+        res.json({ token, role: user.role, id: user.id, username: user.username });
     } else {
         res.status(401).json({ error: 'Credenciales inválidas' });
     }
 });
 
-// Product Routes (Problem E)
 app.get('/api/products', (req, res) => res.json(products));
 
-app.post('/api/products', authenticateToken, authorizeRole(['admin']), (req, res) => {
-    const newProduct = { id: Date.now(), ...req.body }; // Simple ID generation
-    products.push(newProduct);
-    res.json(newProduct);
+app.get('/api/status', (req, res) => res.json(restaurantStatus));
+
+app.post('/api/status', authenticateToken, authorizeRole(['admin']), (req, res) => {
+    const { isOpen } = req.body;
+    if (typeof isOpen !== 'boolean') return res.status(400).json({ error: 'Status invalid' });
+    restaurantStatus.isOpen = isOpen;
+    io.emit('status-updated', restaurantStatus);
+    res.json(restaurantStatus);
 });
 
-app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), (req, res) => {
-    const { id } = req.params;
+app.post('/api/products', authenticateToken, authorizeRole(['admin']), (req, res) => {
+    const newProduct = { id: Date.now(), ...req.body }; 
     const index = products.findIndex(p => p.id == id);
     if (index !== -1) {
         products[index] = { ...products[index], ...req.body, id: Number(id) };
@@ -155,16 +169,49 @@ app.delete('/api/products/:id', authenticateToken, authorizeRole(['admin']), (re
 
 // Order Routes
 app.get('/api/orders', authenticateToken, (req, res) => {
-    // Cocina sees all, Admin sees all, Repartidor might only see ready ones? Let's keep it open for auth users.
+    // Cocina sees all, Admin sees all, Repartidor only sees assigned ones
+    if (req.user.role === 'repartidor') {
+        // Filter assigned orders AND exclude Table orders (dine-in)
+        const myOrders = orders.filter(o => o.assignedTo === req.user.id && !o.tableId);
+        return res.json(myOrders);
+    }
     res.json(orders);
+});
+
+app.get('/api/repartidores', authenticateToken, (req, res) => {
+    const repartidores = users
+    if (req.user.role === 'repartidor') {
+        const myOrders = orders.filter(o => o.assignedTo === req.user.id);
+        return res.json(myOrders);
+    }
+    res.json(orders);
+});
+
+app.get('/api/repartidores', authenticateToken, (req, res) => {
+    const repartidores = users
+        .filter(u => u.role === 'repartidor')
+        .map(u => ({ id: u.id, username: u.username }));
+    res.json(repartidores);
+});
+
+app.put('/api/orders/:id/assign', authenticateToken, authorizeRole(['admin', 'cocina']), (req, res) => {
+    const { id } = req.params;
+    const { assignedTo } = req.body; 
+    
+    const order = orders.find(o => o.id === id);
+    if (order) {
+        order.assignedTo = parseInt(assignedTo);
+        io.emit('order-updated', order);
+        res.json(order);
+    } else {
+        res.status(404).json({ error: "Order not found" });
+    }
 });
 
 app.post('/api/orders', async (req, res) => {
     try {
-        // Validate input (Problem C)
         const validatedData = orderSchema.parse(req.body);
 
-        // Recalculate Total (Problem C - TRUST NO ONE)
         let calculatedTotal = 0;
         const enrichedItems = validatedData.items.map(item => {
             const product = products.find(p => p.id === item.id);
@@ -173,7 +220,7 @@ app.post('/api/orders', async (req, res) => {
             calculatedTotal += product.price * item.quantity;
             return {
                 ...item,
-                name: product.name, // Ensure accurate name from DB
+                name: product.name, 
                 price: product.price 
             };
         });
@@ -200,12 +247,16 @@ app.post('/api/orders', async (req, res) => {
     }
 });
 
-app.put('/api/orders/:id/status', authenticateToken, authorizeRole(['admin', 'cocina']), (req, res) => {
+app.put('/api/orders/:id/status', authenticateToken, authorizeRole(['admin', 'cocina', 'repartidor']), (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     
     const order = orders.find(o => o.id === id);
     if (order) {
+        if (req.user.role === 'repartidor' && order.assignedTo !== req.user.id) {
+            return res.status(403).json({ error: "No autorizado" });
+        }
+        
         order.status = status;
         io.emit('order-updated', order);
         res.json(order);
@@ -214,14 +265,98 @@ app.put('/api/orders/:id/status', authenticateToken, authorizeRole(['admin', 'co
     }
 });
 
-// Sales & Receipt Routes
+// --- TABLES ROUTES ---
+
+app.get('/api/tables', authenticateToken, (req, res) => {
+    res.json(tables);
+});
+
+app.post('/api/tables/:id/occupy', authenticateToken, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    const table = tables.find(t => t.id === tableId);
+    
+    if (table) {
+        if (table.status !== 'free') return res.status(400).json({ error: "Mesa ocupada" });
+        
+        table.status = 'occupied';
+        table.items = [];
+        table.total = 0;
+        table.startTime = new Date().toISOString();
+        
+        io.emit('tables-updated', tables);
+        res.json(table);
+    } else {
+        res.status(404).json({ error: "Mesa no encontrada" });
+    }
+});
+
+app.post('/api/tables/:id/add-item', authenticateToken, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    const { productId, quantity } = req.body;
+    const table = tables.find(t => t.id === tableId);
+    
+    if (!table || table.status !== 'occupied') return res.status(400).json({ error: "Mesa no disponible" });
+
+    const product = products.find(p => p.id === productId);
+    if (!product) return res.status(404).json({ error: "Producto no encontrado" });
+
+    table.items.push({
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: quantity || 1
+    });
+
+    table.total += product.price * (quantity || 1);
+    io.emit('tables-updated', tables);
+    res.json(table);
+});
+
+app.post('/api/tables/:id/close', authenticateToken, (req, res) => {
+    const tableId = parseInt(req.params.id);
+    const table = tables.find(t => t.id === tableId);
+    
+    if (!table || table.status !== 'occupied') return res.status(400).json({ error: "Mesa no disponible para cerrar" });
+
+    // Create Order from Table
+    const newOrder = {
+        id: `TBL-${Date.now()}`,
+        customer: {
+            name: `Cliente Presencial - ${table.name}`,
+            address: 'En Restaurante',
+            paymentMethod: 'Efectivo/Tarjeta',
+            notes: `Mesa cerrada a las ${new Date().toLocaleTimeString()}`
+        },
+        items: table.items,
+        total: table.total,
+        status: 'completed', 
+        receivedAt: new Date().toISOString(),
+        tableId: table.id
+    };
+
+    orders.push(newOrder); 
+    
+    table.status = 'free';
+    table.items = [];
+    table.total = 0;
+    table.startTime = null;
+
+    io.emit('tables-updated', tables);
+    io.emit('sales-updated'); 
+    io.emit('new-order', newOrder); 
+    
+    res.json({ success: true, order: newOrder });
+});
+
 app.get('/api/sales', authenticateToken, authorizeRole(['admin']), (req, res) => {
-    // Logic remains similar but behind auth
     const productStats = {};
+    const driverStats = {}; // { driverName: { count: 0, revenue: 0 } }
     let ordersTotal = 0;
 
     orders.forEach(order => {
         ordersTotal += (order.total || 0);
+
+         // Product Stats
         if (order.items) {
             order.items.forEach(item => {
                 const key = item.name;
@@ -230,16 +365,31 @@ app.get('/api/sales', authenticateToken, authorizeRole(['admin']), (req, res) =>
                 productStats[key].revenue += (item.price * item.quantity);
             });
         }
+        
+        // Driver Stats
+        if (order.assignedTo) {
+            const driverUser = users.find(u => u.id === order.assignedTo);
+            const driverName = driverUser ? driverUser.username : 'Unknown';
+            
+            if (!driverStats[driverName]) driverStats[driverName] = { name: driverName, count: 0, revenue: 0 };
+            
+            // Count delivered orders? Or all assigned? 
+            // Usually performance is based on delivered.
+            if (order.status === 'delivered') {
+                driverStats[driverName].count += 1;
+                driverStats[driverName].revenue += order.total;
+            }
+        }
     });
 
     const receiptsTotal = receipts.reduce((sum, r) => sum + r.amount, 0);
     const globalTotal = ordersTotal + receiptsTotal;
     const topProducts = Object.values(productStats).sort((a, b) => b.quantity - a.quantity);
+    const topDrivers = Object.values(driverStats).sort((a, b) => b.count - a.count);
 
-    res.json({ ordersTotal, receiptsTotal, globalTotal, topProducts, orders, receipts });
+    res.json({ ordersTotal, receiptsTotal, globalTotal, topProducts, topDrivers, orders, receipts });
 });
 
-// Upload Receipt for Analysis (Problem F - Step 1: Scan)
 app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'admin']), upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
 
@@ -268,6 +418,7 @@ app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'a
         
         // OCR Logic
         const foundAmount = extraerMonto(text) || 0;
+        const foundName = extraerNombre(text) || "Desconocido";
 
         const imageUrl = `http://localhost:3000/uploads/${req.file.filename}`;
         
@@ -275,6 +426,7 @@ app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'a
         res.json({
             success: true,
             detectedAmount: foundAmount,
+            detectedName: foundName,
             textSnippet: text.substring(0, 100),
             imageUrl: imageUrl,
             tempFilePath: req.file.path // Ideally use a temp ID/token, but path checks out for now
@@ -309,77 +461,60 @@ app.post('/api/confirm-receipt', authenticateToken, authorizeRole(['repartidor',
 });
 
 // Variable para simular el acumulado (en producción iría a la DB)
-let totalTransacciones = 0;
+// let totalTransacciones = 0; // Removed unused variable
+
+// Función auxiliar para extraer Nombre
+function extraerNombre(text) {
+     const normalized = text.replace(/\r\n/g, '\n');
+     
+     // Estrategia 1: Buscar "De" seguido de un salto de linea (Formato Nequi común)
+     // De
+     // Nombre Completo
+     const multiLineMatch = normalized.match(/De\s*\n\s*([^\n\r]+)/i);
+     if (multiLineMatch && multiLineMatch[1]) {
+        const candidate = multiLineMatch[1].trim();
+        // Evitar que capture "Para" o "¿Cuánto?" si están pegados
+        if (candidate && !candidate.match(/para|cu[aá]nto|fecha|ref/i)) {
+            return candidate;
+        }
+     }
+
+     // Estrategia 2: Buscar "De" en la misma linea
+     const singleLineMatch = normalized.match(/De\s*[:\.]?\s*([A-Za-zñÑ\s]+)(?:\n|$|¿|\?|Para)/i);
+     if (singleLineMatch && singleLineMatch[1]) {
+         const candidate = singleLineMatch[1].trim();
+         if (candidate.length > 2) return candidate;
+     }
+
+     return null;
+}
 
 // Función auxiliar para limpiar el texto y sacar el número
 function extraerMonto(text) {
+  // Estrategia 1: Prioridad absoluta al signo peso ($)
+  // Nequi formato: "$ 7.000,00"
+  const moneyRegex = /\$\s?([0-9]{1,3}(?:\.[0-9]{3})*)\b/;
+  const exactMatch = text.match(moneyRegex);
+  
+  if (exactMatch) {
+      const cleanValue = exactMatch[1].replace(/\./g, '');
+      return parseInt(cleanValue, 10);
+  }
+
+  // Estrategia 2: Fallback general, pero ignorando referencias grandes
   // Eliminamos puntos de miles y buscamos el valor numérico
-  // Ej: de "$ 45.000" queremos 45000
   const matches = text.replace(/\./g, '').match(/\d+/g);
   if (matches) {
-    // Filtramos números que parezcan montos (ej: más de 3 dígitos)
-    const montosPosibles = matches.map(Number).filter(n => n > 100);
-    return Math.max(...montosPosibles); // Retornamos el mayor encontrado
+    // Filtramos números:
+    // 1. > 100 (para evitar "1" item)
+    // 2. < 10000000 (10 millones) para evitar referencias como M20014305 (20 millones interpretados)
+    const montosPosibles = matches.map(Number).filter(n => n > 500 && n < 5000000);
+    if (montosPosibles.length > 0) {
+         return Math.max(...montosPosibles); 
+    }
   }
   return null;
 }
-
-app.post('/api/repartidor/validar-pago', upload.single('screenshot'), async (req, res) => {
-  try {
-    // 1. Pre-procesar imagen con Sharp (Grayscale, High Contrast)
-    const processedPath = `${req.file.path}-processed.png`;
-    
-    if (sharp) {
-        try {
-            await sharp(req.file.path)
-                .resize(1000) // Redimensionar si es muy grande/pequeña para estandarizar
-                .grayscale()
-                .normalize()
-                .sharpen()
-                .toFile(processedPath);
-        } catch (sharpErr) {
-            logger.error(`Sharp processing error: ${sharpErr.message}`);
-            // Fallback to original if sharp fails
-            if (fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
-            fs.copyFileSync(req.file.path, processedPath);
-        }
-    } else {
-        // Fallback if sharp module is missing
-        fs.copyFileSync(req.file.path, processedPath);
-    }
-
-    const worker = await createWorker('spa'); // Usamos español
-    
-    // 2. Extraer texto de la imagen procesada
-    const { data: { text } } = await worker.recognize(processedPath);
-    await worker.terminate();
-
-    // Limpiar archivo procesado
-    if (fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
-
-    // 3. Lógica para extraer el monto
-    // Buscamos patrones comunes como "$ 50.000" o "Monto: 50000"
-    // Esta regex busca números después de un símbolo de peso o palabras clave
-    const montoEncontrado = extraerMonto(text);
-
-    if (montoEncontrado) {
-      totalTransacciones += montoEncontrado;
-      
-      // Aquí actualizarías el estado del pedido a "Pagado" en tu BD
-      res.json({ 
-        success: true, 
-        monto: montoEncontrado, 
-        totalAcumulado: totalTransacciones,
-        textoExtraido: text // Útil para depurar
-      });
-    } else {
-      res.status(400).json({ success: false, message: "No se pudo detectar el monto en la imagen" });
-    }
-  } catch (error) {
-    logger.error(`Error validando pago: ${error.message}`); // Added logging
-    res.status(500).json({ error: error.message });
-  }
-});
 
 server.listen(PORT, () => {
   logger.info(`Backend Server running on port ${PORT}`);

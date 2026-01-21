@@ -11,21 +11,34 @@ export const AuthProvider = ({ children }) => {
     useEffect(() => {
         const storedToken = localStorage.getItem('token');
         const storedRole = localStorage.getItem('role');
+        const storedId = localStorage.getItem('id');
+        const storedUsername = localStorage.getItem('username');
+
         if (storedToken && storedRole) {
-            setUser({ token: storedToken, role: storedRole });
+            setUser({ 
+                token: storedToken, 
+                role: storedRole,
+                id: storedId ? parseInt(storedId) : null,
+                username: storedUsername
+            });
         }
         setLoading(false);
     }, []);
 
-    const login = (token, role) => {
+    const login = (token, role, id, username) => {
         localStorage.setItem('token', token);
         localStorage.setItem('role', role);
-        setUser({ token, role });
+        if (id) localStorage.setItem('id', id);
+        if (username) localStorage.setItem('username', username);
+        
+        setUser({ token, role, id, username });
     };
 
     const logout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('role');
+        localStorage.removeItem('id');
+        localStorage.removeItem('username');
         setUser(null);
     };
 

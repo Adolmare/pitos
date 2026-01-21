@@ -15,10 +15,10 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-20">
           <div className="flex-shrink-0 flex items-center gap-2">
             <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center text-black font-bold text-xl border-2 border-red-600">
-              P
+              R
             </div>
             <span className="font-bold text-2xl tracking-tighter">
-              PITOS <span className="text-yellow-500">PIZZA</span>
+              RESTAURANTE
             </span>
           </div>
           

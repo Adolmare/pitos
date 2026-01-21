@@ -21,9 +21,9 @@ const Login = () => {
             const data = await res.json();
             
             if (res.ok) {
-                login(data.token, data.role);
+                login(data.token, data.role, data.id, data.username);
                 // Redirect based on role
-                if (data.role === 'admin') navigate('/ventas');
+                if (data.role === 'admin') navigate('/admin');
                 else if (data.role === 'cocina') navigate('/cocina');
                 else if (data.role === 'repartidor') navigate('/repartidor');
                 else navigate('/'); 
@@ -39,7 +39,7 @@ const Login = () => {
         <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-4">
             <div className="bg-neutral-800 p-8 rounded-2xl border border-white/10 w-full max-w-sm shadow-xl">
                 <div className="flex items-center justify-center mb-8">
-                     <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center text-black font-bold text-2xl border-2 border-red-600">P</div>
+                     <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center text-black font-bold text-2xl border-2 border-red-600">R</div>
                 </div>
                 <h2 className="text-2xl font-bold text-white text-center mb-6">Acceso Empleados</h2>
                 
