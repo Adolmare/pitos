@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+require('dotenv').config(); // Load environment variables
 const { Server } = require('socket.io');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -36,9 +37,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST", "PUT", "DELETE"] }
 });
-
-const JWT_SECRET = 'super-secret-key-change-in-production';
-const PORT = 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-production';
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -55,12 +55,12 @@ const upload = multer({ storage: storage });
 
 // --- 2. DATA STORE ---
 const users = [
-    { id: 1, username: 'admin', passwordHash: bcrypt.hashSync('adminMaster', 8), role: 'admin' },
-    { id: 2, username: 'cocina', passwordHash: bcrypt.hashSync('cocinaChef', 8), role: 'cocina' },
-    { id: 3, username: 'reparto', passwordHash: bcrypt.hashSync('repartoExpress', 8), role: 'repartidor' },
-    { id: 4, username: 'juan', passwordHash: bcrypt.hashSync('juan123', 8), role: 'repartidor' },
-    { id: 5, username: 'pedro', passwordHash: bcrypt.hashSync('pedro123', 8), role: 'repartidor' },
-    { id: 6, username: 'maria', passwordHash: bcrypt.hashSync('maria123', 8), role: 'repartidor' }
+    { id: 1, username: 'admin', passwordHash: bcrypt.hashSync(process.env.PASSWORD_ADMIN || 'adminMaster', 8), role: 'admin' },
+    { id: 2, username: 'cocina', passwordHash: bcrypt.hashSync(process.env.PASSWORD_COCINA || 'cocinaChef', 8), role: 'cocina' },
+    { id: 3, username: 'reparto', passwordHash: bcrypt.hashSync(process.env.PASSWORD_REPARTO || 'repartoExpress', 8), role: 'repartidor' },
+    { id: 4, username: 'juan', passwordHash: bcrypt.hashSync(process.env.PASSWORD_JUAN || 'juan123', 8), role: 'repartidor' },
+    { id: 5, username: 'pedro', passwordHash: bcrypt.hashSync(process.env.PASSWORD_PEDRO || 'pedro123', 8), role: 'repartidor' },
+    { id: 6, username: 'maria', passwordHash: bcrypt.hashSync(process.env.PASSWORD_MARIA || 'maria123', 8), role: 'repartidor' }
 ];
 
 let products = [...initialMenu];
@@ -153,6 +153,12 @@ app.post('/api/status', authenticateToken, authorizeRole(['admin']), (req, res) 
 
 app.post('/api/products', authenticateToken, authorizeRole(['admin']), (req, res) => {
     const newProduct = { id: Date.now(), ...req.body }; 
+    products.push(newProduct);
+    res.json(newProduct);
+});
+
+app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), (req, res) => {
+    const { id } = req.params;
     const index = products.findIndex(p => p.id == id);
     if (index !== -1) {
         products[index] = { ...products[index], ...req.body, id: Number(id) };

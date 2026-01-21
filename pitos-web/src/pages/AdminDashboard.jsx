@@ -54,7 +54,7 @@ const AdminDashboard = () => {
 
   const fetchStatus = async () => {
     try {
-        const response = await fetch('http://localhost:3000/api/status');
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/status`);
         if (response.ok) {
             const data = await response.json();
             setIsRestaurantOpen(data.isOpen);
@@ -66,7 +66,7 @@ const AdminDashboard = () => {
 
   const toggleStatus = async () => {
     try {
-        const response = await fetch('http://localhost:3000/api/status', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/status`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -83,7 +83,7 @@ const AdminDashboard = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/sales', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sales`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -203,6 +203,17 @@ const AdminDashboard = () => {
             </div>
             <h3 className="text-xl font-semibold mb-1">Repartidores</h3>
             <p className="text-gray-400 text-sm">Vista de repartos activos</p>
+          </Link>
+
+          <Link to="/products" className="bg-gray-800 p-6 rounded-xl border border-gray-700 hover:border-purple-500 transition-all shadow-lg hover:shadow-purple-500/20 group">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-purple-900/50 rounded-lg text-purple-400 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                <ShoppingBag size={28} />
+              </div>
+              <span className="text-gray-400 text-sm">Inventario</span>
+            </div>
+            <h3 className="text-xl font-semibold mb-1">Productos</h3>
+            <p className="text-gray-400 text-sm">Gestionar menú y precios</p>
           </Link>
         </div>
 

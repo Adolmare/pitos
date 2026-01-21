@@ -115,36 +115,6 @@ const Hero = () => {
                }}
              />
 
-             {/* Floating 3D Cards */}
-             <motion.div 
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0, y: [0, -10, 0] }}
-                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-                className="absolute top-[10%] lg:right-0 right-[-10px] bg-black/60 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-3 z-20"
-             >
-                <div className="w-12 h-12 bg-yellow-500/20 rounded-xl flex items-center justify-center text-2xl">
-                  🌮
-                </div>
-                <div>
-                  <p className="text-white font-bold text-sm">Sabor Único</p>
-                  <p className="text-xs text-gray-400">Receta secreta</p>
-                </div>
-             </motion.div>
-
-             <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0, y: [0, 10, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 0.8 }}
-                className="absolute bottom-[20%] left-0 lg:-left-10 bg-black/60 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-3 z-20"
-             >
-                <div className="w-12 h-12 bg-red-500/20 rounded-xl flex items-center justify-center text-2xl">
-                  🔥
-                </div>
-                <div>
-                  <p className="text-white font-bold text-sm">Caliente & Fresco</p>
-                  <p className="text-xs text-gray-400">Preparado al instante</p>
-                </div>
-             </motion.div>
 
           </motion.div>
         </div>

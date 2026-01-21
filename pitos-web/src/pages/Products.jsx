@@ -72,7 +72,7 @@ const Products = () => {
             <div className="max-w-6xl mx-auto">
                 <header className="flex items-center justify-between mb-8">
                      <div>
-                        <Link to="/ventas" className="text-neutral-400 hover:text-white flex items-center gap-2 mb-2 transition-colors">
+                        <Link to="/admin" className="text-neutral-400 hover:text-white flex items-center gap-2 mb-2 transition-colors">
                             <ArrowLeft size={20} />
                             Volver al Panel
                         </Link>
