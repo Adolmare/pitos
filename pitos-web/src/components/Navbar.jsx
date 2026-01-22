@@ -8,6 +8,8 @@ const Navbar = () => {
     setIsCartOpen, 
     cartCount 
   } = useCart();
+  
+  const isCloudMode = import.meta.env.VITE_APP_MODE === 'cloud';
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-neutral-900/90 backdrop-blur-md border-b border-white/10 shadow-lg">
@@ -17,8 +19,9 @@ const Navbar = () => {
             <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center text-black font-bold text-xl border-2 border-red-600">
               R
             </div>
-            <span className="font-bold text-2xl tracking-tighter">
+            <span className="font-bold text-2xl tracking-tighter flex flex-col leading-none">
               RESTAURANTE
+              {isCloudMode && <span className="text-[10px] text-blue-400 uppercase tracking-widest font-normal">Online</span>}
             </span>
           </div>
           

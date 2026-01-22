@@ -125,6 +125,73 @@ const orderSchema = z.object({
     }))
 });
 
+// --- BRIDGE: SINCRONIZACIÓN CON LA NUBE (Software B) ---
+const CLOUD_URL = process.env.CLOUD_URL || 'http://localhost:4000';
+const SYNC_SECRET = process.env.SYNC_SECRET || 'clave-secreta-del-puente';
+
+// 1. Función para subir el menú a la nube (Llamar cuando se edita el menú)
+const syncMenuToCloud = async () => {
+    try {
+        await fetch(`${CLOUD_URL}/sync/menu`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'x-sync-secret': SYNC_SECRET 
+            },
+            body: JSON.stringify(products)
+        });
+        console.log('✅ BRIDGE: Menú sincronizado con la Nube');
+    } catch (error) {
+        console.error('❌ BRIDGE ERROR (Menú):', error.message);
+    }
+};
+
+// 2. Función para subir estado (Abierto/Cerrado)
+const syncStatusToCloud = async () => {
+    try {
+        await fetch(`${CLOUD_URL}/sync/status`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'x-sync-secret': SYNC_SECRET 
+            },
+            body: JSON.stringify(restaurantStatus)
+        });
+    } catch (error) {
+        console.error('❌ BRIDGE ERROR (Status):', error.message);
+    }
+};
+
+// 3. Polling: Preguntar a la nube si hay pedidos nuevos cada 10 segundos
+setInterval(async () => {
+    try {
+        const res = await fetch(`${CLOUD_URL}/sync/orders`, {
+            headers: { 'x-sync-secret': SYNC_SECRET }
+        });
+        if (res.ok) {
+            const cloudOrders = await res.json();
+            if (cloudOrders.length > 0) {
+                console.log(`✅ BRIDGE: Descargados ${cloudOrders.length} pedidos de la nube`);
+                
+                cloudOrders.forEach(co => {
+                    // Integrar pedido de nube a local
+                    const localOrder = {
+                        ...co,
+                        id: `NUBE-${co.id.split('-')[1] || Date.now()}`, // Asegurar ID único
+                        status: 'pending', // Entra como pendiente a cocina
+                        isWebOrder: true
+                    };
+                    orders.unshift(localOrder);
+                    io.emit('new-order', localOrder);
+                });
+                io.emit('sales-updated');
+            }
+        }
+    } catch (error) {
+        // Silencioso para no llenar el log si la nube está apagada
+    }
+}, 10000);
+
 // --- ROUTES ---
 
 app.post('/api/login', (req, res) => {
@@ -148,12 +215,14 @@ app.post('/api/status', authenticateToken, authorizeRole(['admin']), (req, res) 
     if (typeof isOpen !== 'boolean') return res.status(400).json({ error: 'Status invalid' });
     restaurantStatus.isOpen = isOpen;
     io.emit('status-updated', restaurantStatus);
+    syncStatusToCloud(); // <-- Trigger sync
     res.json(restaurantStatus);
 });
 
 app.post('/api/products', authenticateToken, authorizeRole(['admin']), (req, res) => {
     const newProduct = { id: Date.now(), ...req.body }; 
     products.push(newProduct);
+    syncMenuToCloud(); // <-- Trigger sync
     res.json(newProduct);
 });
 
@@ -162,6 +231,7 @@ app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), (req, 
     const index = products.findIndex(p => p.id == id);
     if (index !== -1) {
         products[index] = { ...products[index], ...req.body, id: Number(id) };
+        syncMenuToCloud(); // <-- Trigger sync
         res.json(products[index]);
     } else {
         res.status(404).json({ error: "Producto no encontrado" });
@@ -170,6 +240,7 @@ app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), (req, 
 
 app.delete('/api/products/:id', authenticateToken, authorizeRole(['admin']), (req, res) => {
     products = products.filter(p => p.id != req.params.id);
+    syncMenuToCloud(); // <-- Trigger sync
     res.json({ success: true });
 });
 
