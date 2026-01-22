@@ -162,23 +162,58 @@ const syncStatusToCloud = async () => {
     }
 };
 
-// 3. Polling: Preguntar a la nube si hay pedidos nuevos cada 10 segundos
+// 4. Función para subir cuentas de repartidores a la nube
+const syncDriversToCloud = async () => {
+    try {
+        const drivers = users.filter(u => u.role === 'repartidor');
+        await fetch(`${CLOUD_URL}/sync/drivers`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'x-sync-secret': SYNC_SECRET 
+            },
+            body: JSON.stringify(drivers)
+        });
+        console.log('✅ BRIDGE: Repartidores sincronizados');
+    } catch (error) {
+        console.error('❌ BRIDGE ERROR (Drivers):', error.message);
+    }
+};
+// Sincronizar al inicio
+setTimeout(syncDriversToCloud, 5000); 
+
+// 5. Función para subir asignacion
+const syncAssignment = async (order) => {
+    try {
+        await fetch(`${CLOUD_URL}/sync/assignments`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'x-sync-secret': SYNC_SECRET 
+            },
+            body: JSON.stringify(order)
+        });
+    } catch (error) {
+        console.error('❌ BRIDGE ERROR (Assignment):', error.message);
+    }
+};
+
+// 3. Polling: Preguntar a la nube si hay pedidos nuevos O completados
 setInterval(async () => {
     try {
-        const res = await fetch(`${CLOUD_URL}/sync/orders`, {
+        // A. Pedidos Nuevos WEB
+        const resOrders = await fetch(`${CLOUD_URL}/sync/orders`, {
             headers: { 'x-sync-secret': SYNC_SECRET }
         });
-        if (res.ok) {
-            const cloudOrders = await res.json();
+        if (resOrders.ok) {
+            const cloudOrders = await resOrders.json();
             if (cloudOrders.length > 0) {
                 console.log(`✅ BRIDGE: Descargados ${cloudOrders.length} pedidos de la nube`);
-                
                 cloudOrders.forEach(co => {
-                    // Integrar pedido de nube a local
                     const localOrder = {
                         ...co,
-                        id: `NUBE-${co.id.split('-')[1] || Date.now()}`, // Asegurar ID único
-                        status: 'pending', // Entra como pendiente a cocina
+                        id: `NUBE-${co.id.split('-')[1] || Date.now()}`,
+                        status: 'pending', 
                         isWebOrder: true
                     };
                     orders.unshift(localOrder);
@@ -187,10 +222,37 @@ setInterval(async () => {
                 io.emit('sales-updated');
             }
         }
+
+        // B. Pedidos Entregados por Repartidor en Nube
+        const resDelivered = await fetch(`${CLOUD_URL}/sync/delivered`, { // New endpoint
+             headers: { 'x-sync-secret': SYNC_SECRET }
+        });
+        if (resDelivered.ok) {
+            const deliveredList = await resDelivered.json();
+            if (deliveredList.length > 0) {
+                deliveredList.forEach(d => {
+                    const localOrder = orders.find(o => o.id == d.id || `NUBE-${o.id.split('-')[1]}` == d.id); // Try to match ID
+                    // Note: If ID format differs, we might need robust matching.
+                    // Assuming cloud uses same ID structure if pushed from local.
+                    // If pushed from local, ID "123". Cloud has "123". Match "123".
+                    // If WEB order "WEB-123", local has "NUBE-123". Cloud has "WEB-123".
+                    // We need to handle this ID mapping properly.
+                    // Simple fix: Sync assignment sends the LOCAL ID to Cloud. Cloud stores LOCAL ID.
+                    
+                    const target = orders.find(o => o.id == d.id);
+                    if (target && target.status !== 'completed') {
+                        target.status = 'completed';
+                        io.emit('order-updated', target);
+                        console.log(`✅ BRIDGE: Pedido ${d.id} completado remotamente.`);
+                    }
+                });
+            }
+        }
+
     } catch (error) {
-        // Silencioso para no llenar el log si la nube está apagada
     }
-}, 10000);
+}, 5000); // Polling cada 5s para mayor velocidad en repartos
+
 
 // --- ROUTES ---
 
@@ -279,6 +341,10 @@ app.put('/api/orders/:id/assign', authenticateToken, authorizeRole(['admin', 'co
     if (order) {
         order.assignedTo = parseInt(assignedTo);
         io.emit('order-updated', order);
+        
+        // BRIDGE: Enviar asignación a la nube
+        syncAssignment(order);
+        
         res.json(order);
     } else {
         res.status(404).json({ error: "Order not found" });
