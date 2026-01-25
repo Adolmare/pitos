@@ -13,6 +13,7 @@ const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const morgan = require('morgan');
 const winston = require('winston');
+const mongoose = require('mongoose');
 let sharp;
 try {
     sharp = require('sharp');
@@ -51,32 +52,30 @@ const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + '-' + file.originalname)
 });
+const User = require('./models/User');
+const Product = require('./models/Product');
+const Table = require('./models/Table');
+const Order = require('./models/Order');
+const Sale = require('./models/Sale');
+const Receipt = require('./models/Receipt');
+const initializeDB = require('./dbInit');
+
 const upload = multer({ storage: storage });
 
-// --- 2. DATA STORE ---
-const users = [
-    { id: 1, username: 'admin', passwordHash: bcrypt.hashSync(process.env.PASSWORD_ADMIN || 'adminMaster', 8), role: 'admin' },
-    { id: 2, username: 'cocina', passwordHash: bcrypt.hashSync(process.env.PASSWORD_COCINA || 'cocinaChef', 8), role: 'cocina' },
-    { id: 3, username: 'reparto', passwordHash: bcrypt.hashSync(process.env.PASSWORD_REPARTO || 'repartoExpress', 8), role: 'repartidor' },
-    { id: 4, username: 'juan', passwordHash: bcrypt.hashSync(process.env.PASSWORD_JUAN || 'juan123', 8), role: 'repartidor' },
-    { id: 5, username: 'pedro', passwordHash: bcrypt.hashSync(process.env.PASSWORD_PEDRO || 'pedro123', 8), role: 'repartidor' },
-    { id: 6, username: 'maria', passwordHash: bcrypt.hashSync(process.env.PASSWORD_MARIA || 'maria123', 8), role: 'repartidor' }
-];
+// --- DATABASE CONNECTION ---
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/restaurante')
+  .then(async () => {
+      logger.info('Connected to MongoDB');
+      await initializeDB();
+  })
+  .catch(err => logger.error('MongoDB connection error:', err));
 
-let products = [...initialMenu];
-let restaurantStatus = { isOpen: true };
+// --- 2. DATA STORE REPLACEMENT (Global State for sync only) ---
+let restaurantStatus = { isOpen: true }; // Keep in memory or move to DB Config? Keep for simple state.
 
-let orders = [];
-let receipts = [];
+// NOTE: users, products, orders, receipts, tables are now Mongoose Models.
+// any direct array access must be replaced by DB calls.
 
-let tables = Array.from({ length: 30 }, (_, i) => ({
-    id: i + 1,
-    name: `Mesa ${i + 1}`,
-    status: 'free',
-    items: [],
-    total: 0,
-    startTime: null
-}));
 
 // --- 3. MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
@@ -132,6 +131,7 @@ const SYNC_SECRET = process.env.SYNC_SECRET || 'clave-secreta-del-puente';
 // 1. Función para subir el menú a la nube (Llamar cuando se edita el menú)
 const syncMenuToCloud = async () => {
     try {
+        const products = await Product.find();
         await fetch(`${CLOUD_URL}/sync/menu`, {
             method: 'POST',
             headers: { 
@@ -165,7 +165,7 @@ const syncStatusToCloud = async () => {
 // 4. Función para subir cuentas de repartidores a la nube
 const syncDriversToCloud = async () => {
     try {
-        const drivers = users.filter(u => u.role === 'repartidor');
+        const drivers = await User.find({ role: 'repartidor' });
         await fetch(`${CLOUD_URL}/sync/drivers`, {
             method: 'POST',
             headers: { 
@@ -209,66 +209,86 @@ setInterval(async () => {
             const cloudOrders = await resOrders.json();
             if (cloudOrders.length > 0) {
                 console.log(`✅ BRIDGE: Descargados ${cloudOrders.length} pedidos de la nube`);
-                cloudOrders.forEach(co => {
-                    const localOrder = {
-                        ...co,
-                        id: `NUBE-${co.id.split('-')[1] || Date.now()}`,
-                        status: 'pending', 
-                        isWebOrder: true
-                    };
-                    orders.unshift(localOrder);
-                    io.emit('new-order', localOrder);
-                });
+                for (const co of cloudOrders) {
+                    const customId = `NUBE-${co.id.split('-')[1] || Date.now()}`;
+                    
+                    // Check duplicate
+                    const exists = await Order.findOne({ customId });
+                    if (!exists) {
+                         const localOrder = new Order({
+                            customId: customId,
+                            customer: co.customer,
+                            items: co.items, // Ensure structure matches
+                            total: co.total,
+                            status: 'pending',
+                            isWebOrder: true,
+                            type: 'delivery' // Web orders are usually delivery
+                        });
+                        await localOrder.save();
+                        io.emit('new-order', localOrder);
+                    }
+                }
                 io.emit('sales-updated');
             }
         }
 
         // B. Pedidos Entregados por Repartidor en Nube
-        const resDelivered = await fetch(`${CLOUD_URL}/sync/delivered`, { // New endpoint
+        const resDelivered = await fetch(`${CLOUD_URL}/sync/delivered`, { 
              headers: { 'x-sync-secret': SYNC_SECRET }
         });
         if (resDelivered.ok) {
             const deliveredList = await resDelivered.json();
             if (deliveredList.length > 0) {
-                deliveredList.forEach(d => {
-                    const localOrder = orders.find(o => o.id == d.id || `NUBE-${o.id.split('-')[1]}` == d.id); // Try to match ID
-                    // Note: If ID format differs, we might need robust matching.
-                    // Assuming cloud uses same ID structure if pushed from local.
-                    // If pushed from local, ID "123". Cloud has "123". Match "123".
-                    // If WEB order "WEB-123", local has "NUBE-123". Cloud has "WEB-123".
-                    // We need to handle this ID mapping properly.
-                    // Simple fix: Sync assignment sends the LOCAL ID to Cloud. Cloud stores LOCAL ID.
+                for (const d of deliveredList) {
+                    // Try to match by customId or _id (if we synced _id)
+                    // The cloud likely sends back the ID we sent it (customId or _id)
+                    // Logic was: o.id == d.id OR NUBE-part == d.id
                     
-                    const target = orders.find(o => o.id == d.id);
+                    const target = await Order.findOne({
+                        $or: [
+                            { customId: d.id },
+                            { _id: mongoose.isValidObjectId(d.id) ? d.id : null }
+                        ]
+                    });
+
                     if (target && target.status !== 'completed') {
                         target.status = 'completed';
+                        await target.save();
                         io.emit('order-updated', target);
                         console.log(`✅ BRIDGE: Pedido ${d.id} completado remotamente.`);
                     }
-                });
+                }
             }
         }
 
     } catch (error) {
+        // console.error(error); // Evitar spam
     }
 }, 5000); // Polling cada 5s para mayor velocidad en repartos
 
 
 // --- ROUTES ---
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    const user = users.find(u => u.username === username);
-    
-    if (user && bcrypt.compareSync(password, user.passwordHash)) {
-        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
-        res.json({ token, role: user.role, id: user.id, username: user.username });
-    } else {
-        res.status(401).json({ error: 'Credenciales inválidas' });
+    try {
+        const user = await User.findOne({ username });
+        
+        if (user && bcrypt.compareSync(password, user.password)) {
+            const token = jwt.sign({ id: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
+            res.json({ token, role: user.role, id: user._id, username: user.username });
+        } else {
+            res.status(401).json({ error: 'Credenciales inválidas' });
+        }
+    } catch (e) {
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
-app.get('/api/products', (req, res) => res.json(products));
+app.get('/api/products', async (req, res) => {
+    const products = await Product.find().sort({ id: 1 });
+    res.json(products);
+});
 
 app.get('/api/status', (req, res) => res.json(restaurantStatus));
 
@@ -277,110 +297,135 @@ app.post('/api/status', authenticateToken, authorizeRole(['admin']), (req, res) 
     if (typeof isOpen !== 'boolean') return res.status(400).json({ error: 'Status invalid' });
     restaurantStatus.isOpen = isOpen;
     io.emit('status-updated', restaurantStatus);
-    syncStatusToCloud(); // <-- Trigger sync
+    syncStatusToCloud(); 
     res.json(restaurantStatus);
 });
 
-app.post('/api/products', authenticateToken, authorizeRole(['admin']), (req, res) => {
-    const newProduct = { id: Date.now(), ...req.body }; 
-    products.push(newProduct);
-    syncMenuToCloud(); // <-- Trigger sync
-    res.json(newProduct);
-});
-
-app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), (req, res) => {
-    const { id } = req.params;
-    const index = products.findIndex(p => p.id == id);
-    if (index !== -1) {
-        products[index] = { ...products[index], ...req.body, id: Number(id) };
-        syncMenuToCloud(); // <-- Trigger sync
-        res.json(products[index]);
-    } else {
-        res.status(404).json({ error: "Producto no encontrado" });
+app.post('/api/products', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    try {
+        const lastProduct = await Product.findOne().sort({ id: -1 });
+        const nextId = (lastProduct && lastProduct.id) ? lastProduct.id + 1 : 1;
+        
+        const newProduct = await Product.create({ ...req.body, id: nextId });
+        syncMenuToCloud();
+        res.json(newProduct);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
-app.delete('/api/products/:id', authenticateToken, authorizeRole(['admin']), (req, res) => {
-    products = products.filter(p => p.id != req.params.id);
-    syncMenuToCloud(); // <-- Trigger sync
-    res.json({ success: true });
+app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    const { id } = req.params; // numeric ID
+    try {
+        const updated = await Product.findOneAndUpdate({ id: Number(id) }, req.body, { new: true });
+        if (updated) {
+            syncMenuToCloud();
+            res.json(updated);
+        } else {
+            res.status(404).json({ error: "Producto no encontrado" });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/products/:id', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    try {
+        await Product.findOneAndDelete({ id: Number(req.params.id) });
+        syncMenuToCloud();
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // Order Routes
-app.get('/api/orders', authenticateToken, (req, res) => {
-    // Cocina sees all, Admin sees all, Repartidor only sees assigned ones
-    if (req.user.role === 'repartidor') {
-        // Filter assigned orders AND exclude Table orders (dine-in)
-        const myOrders = orders.filter(o => o.assignedTo === req.user.id && !o.tableId);
-        return res.json(myOrders);
+app.get('/api/orders', authenticateToken, async (req, res) => {
+    try {
+        let query = {};
+        // If repartidor, show only assigned orders (exclude dine-in tables usually, or check status)
+        if (req.user.role === 'repartidor') {
+            query = { assignedTo: req.user.id };
+        }
+        
+        // Maybe sort by date?
+        const orderList = await Order.find(query).sort({ receivedAt: -1 }).limit(100);
+        res.json(orderList);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
-    res.json(orders);
 });
 
-app.get('/api/repartidores', authenticateToken, (req, res) => {
-    const repartidores = users
-    if (req.user.role === 'repartidor') {
-        const myOrders = orders.filter(o => o.assignedTo === req.user.id);
-        return res.json(myOrders);
+app.get('/api/repartidores', authenticateToken, async (req, res) => {
+    try {
+        const repartidores = await User.find({ role: 'repartidor' }).select('id username');
+        res.json(repartidores);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
-    res.json(orders);
 });
 
-app.get('/api/repartidores', authenticateToken, (req, res) => {
-    const repartidores = users
-        .filter(u => u.role === 'repartidor')
-        .map(u => ({ id: u.id, username: u.username }));
-    res.json(repartidores);
-});
-
-app.put('/api/orders/:id/assign', authenticateToken, authorizeRole(['admin', 'cocina']), (req, res) => {
-    const { id } = req.params;
+app.put('/api/orders/:id/assign', authenticateToken, authorizeRole(['admin', 'cocina']), async (req, res) => {
+    const { id } = req.params; // string ID or customId
     const { assignedTo } = req.body; 
     
-    const order = orders.find(o => o.id === id);
-    if (order) {
-        order.assignedTo = parseInt(assignedTo);
-        io.emit('order-updated', order);
-        
-        // BRIDGE: Enviar asignación a la nube
-        syncAssignment(order);
-        
-        res.json(order);
-    } else {
-        res.status(404).json({ error: "Order not found" });
+    try {
+        // Try to match _id or customId
+        const order = await Order.findOne({ 
+             $or: [
+                 { customId: id },
+                 { _id: mongoose.isValidObjectId(id) ? id : null }
+             ]
+        });
+
+        if (order) {
+            order.assignedTo = assignedTo; // Expecting ObjectId string
+            await order.save();
+            io.emit('order-updated', order);
+            syncAssignment(order);
+            res.json(order);
+        } else {
+            res.status(404).json({ error: "Order not found" });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
 app.post('/api/orders', async (req, res) => {
     try {
         const validatedData = orderSchema.parse(req.body);
-
         let calculatedTotal = 0;
-        const enrichedItems = validatedData.items.map(item => {
-            const product = products.find(p => p.id === item.id);
-            if (!product) throw new Error(`Producto ID ${item.id} no existe`);
-            
-            calculatedTotal += product.price * item.quantity;
-            return {
-                ...item,
-                name: product.name, 
-                price: product.price 
-            };
-        });
+        const enrichedItems = [];
 
-        const newOrder = {
-            id: Date.now().toString(),
+        // Validate products async
+        for (const item of validatedData.items) {
+             const product = await Product.findOne({ id: item.id }); // Using numeric ID from menu
+             if (!product) throw new Error(`Producto ID ${item.id} no existe`);
+             
+             calculatedTotal += product.price * item.quantity;
+             enrichedItems.push({
+                 product: product._id, // Link to DB object
+                 id: product.id,       // Keep numeric ID
+                 quantity: item.quantity,
+                 name: product.name,
+                 price: product.price
+             });
+        }
+
+        const newOrder = await Order.create({
+            customId: Date.now().toString(),
             customer: validatedData.customer,
             items: enrichedItems,
             total: calculatedTotal,
             status: 'pending',
-            receivedAt: new Date().toISOString()
-        };
+            receivedAt: new Date(),
+            type: 'delivery' // Default for API orders
+        });
         
-        orders.unshift(newOrder);
         io.emit('new-order', newOrder);
         io.emit('sales-updated');
-        logger.info(`New order created: ${newOrder.id} - Total: ${calculatedTotal}`);
+        logger.info(`New order created: ${newOrder.customId || newOrder._id} - Total: ${calculatedTotal}`);
         
         res.status(201).json(newOrder);
 
@@ -390,147 +435,198 @@ app.post('/api/orders', async (req, res) => {
     }
 });
 
-app.put('/api/orders/:id/status', authenticateToken, authorizeRole(['admin', 'cocina', 'repartidor']), (req, res) => {
+app.put('/api/orders/:id/status', authenticateToken, authorizeRole(['admin', 'cocina', 'repartidor']), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     
-    const order = orders.find(o => o.id === id);
-    if (order) {
-        if (req.user.role === 'repartidor' && order.assignedTo !== req.user.id) {
-            return res.status(403).json({ error: "No autorizado" });
+    try {
+        const order = await Order.findOne({ 
+             $or: [
+                 { customId: id },
+                 { _id: mongoose.isValidObjectId(id) ? id : null }
+             ]
+        });
+
+        if (order) {
+            if (req.user.role === 'repartidor' && String(order.assignedTo) !== req.user.id) {
+                return res.status(403).json({ error: "No autorizado" });
+            }
+            
+            order.status = status;
+            await order.save();
+            io.emit('order-updated', order);
+            res.json(order);
+        } else {
+            res.status(404).json({ error: "Order not found" });
         }
-        
-        order.status = status;
-        io.emit('order-updated', order);
-        res.json(order);
-    } else {
-        res.status(404).json({ error: "Order not found" });
+    } catch (e) {
+         res.status(500).json({ error: e.message });
     }
 });
 
 // --- TABLES ROUTES ---
 
-app.get('/api/tables', authenticateToken, (req, res) => {
-    res.json(tables);
-});
-
-app.post('/api/tables/:id/occupy', authenticateToken, (req, res) => {
-    const tableId = parseInt(req.params.id);
-    const table = tables.find(t => t.id === tableId);
-    
-    if (table) {
-        if (table.status !== 'free') return res.status(400).json({ error: "Mesa ocupada" });
-        
-        table.status = 'occupied';
-        table.items = [];
-        table.total = 0;
-        table.startTime = new Date().toISOString();
-        
-        io.emit('tables-updated', tables);
-        res.json(table);
-    } else {
-        res.status(404).json({ error: "Mesa no encontrada" });
+app.get('/api/tables', authenticateToken, async (req, res) => {
+    try {
+        const tables = await Table.find().sort({ id: 1 });
+        res.json(tables);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
-app.post('/api/tables/:id/add-item', authenticateToken, (req, res) => {
+app.post('/api/tables/:id/occupy', authenticateToken, async (req, res) => {
+    const tableId = parseInt(req.params.id);
+    try {
+        const table = await Table.findOne({ id: tableId });
+        
+        if (table) {
+            if (table.status !== 'free') return res.status(400).json({ error: "Mesa ocupada" });
+            
+            table.status = 'occupied';
+            table.items = [];
+            table.total = 0;
+            table.startTime = new Date();
+            await table.save();
+            
+            const allTables = await Table.find().sort({ id: 1 });
+            io.emit('tables-updated', allTables);
+            res.json(table);
+        } else {
+            res.status(404).json({ error: "Mesa no encontrada" });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/tables/:id/add-item', authenticateToken, async (req, res) => {
     const tableId = parseInt(req.params.id);
     const { productId, quantity } = req.body;
-    const table = tables.find(t => t.id === tableId);
     
-    if (!table || table.status !== 'occupied') return res.status(400).json({ error: "Mesa no disponible" });
+    try {
+        const table = await Table.findOne({ id: tableId });
+        if (!table || table.status !== 'occupied') return res.status(400).json({ error: "Mesa no disponible" });
 
-    const product = products.find(p => p.id === productId);
-    if (!product) return res.status(404).json({ error: "Producto no encontrado" });
+        const product = await Product.findOne({ id: productId });
+        if (!product) return res.status(404).json({ error: "Producto no encontrado" });
 
-    table.items.push({
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        quantity: quantity || 1
-    });
+        table.items.push({
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            quantity: quantity || 1
+        });
 
-    table.total += product.price * (quantity || 1);
-    io.emit('tables-updated', tables);
-    res.json(table);
-});
-
-app.post('/api/tables/:id/close', authenticateToken, (req, res) => {
-    const tableId = parseInt(req.params.id);
-    const table = tables.find(t => t.id === tableId);
-    
-    if (!table || table.status !== 'occupied') return res.status(400).json({ error: "Mesa no disponible para cerrar" });
-
-    // Create Order from Table
-    const newOrder = {
-        id: `TBL-${Date.now()}`,
-        customer: {
-            name: `Cliente Presencial - ${table.name}`,
-            address: 'En Restaurante',
-            paymentMethod: 'Efectivo/Tarjeta',
-            notes: `Mesa cerrada a las ${new Date().toLocaleTimeString()}`
-        },
-        items: table.items,
-        total: table.total,
-        status: 'completed', 
-        receivedAt: new Date().toISOString(),
-        tableId: table.id
-    };
-
-    orders.push(newOrder); 
-    
-    table.status = 'free';
-    table.items = [];
-    table.total = 0;
-    table.startTime = null;
-
-    io.emit('tables-updated', tables);
-    io.emit('sales-updated'); 
-    io.emit('new-order', newOrder); 
-    
-    res.json({ success: true, order: newOrder });
-});
-
-app.get('/api/sales', authenticateToken, authorizeRole(['admin']), (req, res) => {
-    const productStats = {};
-    const driverStats = {}; // { driverName: { count: 0, revenue: 0 } }
-    let ordersTotal = 0;
-
-    orders.forEach(order => {
-        ordersTotal += (order.total || 0);
-
-         // Product Stats
-        if (order.items) {
-            order.items.forEach(item => {
-                const key = item.name;
-                if (!productStats[key]) productStats[key] = { name: key, quantity: 0, revenue: 0 };
-                productStats[key].quantity += item.quantity;
-                productStats[key].revenue += (item.price * item.quantity);
-            });
-        }
+        table.total += product.price * (quantity || 1);
+        await table.save();
         
-        // Driver Stats
-        if (order.assignedTo) {
-            const driverUser = users.find(u => u.id === order.assignedTo);
-            const driverName = driverUser ? driverUser.username : 'Unknown';
-            
-            if (!driverStats[driverName]) driverStats[driverName] = { name: driverName, count: 0, revenue: 0 };
-            
-            // Count delivered orders? Or all assigned? 
-            // Usually performance is based on delivered.
-            if (order.status === 'delivered') {
-                driverStats[driverName].count += 1;
-                driverStats[driverName].revenue += order.total;
+        const allTables = await Table.find().sort({ id: 1 });
+        io.emit('tables-updated', allTables);
+        res.json(table);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/tables/:id/close', authenticateToken, async (req, res) => {
+    const tableId = parseInt(req.params.id);
+    try {
+        const table = await Table.findOne({ id: tableId });
+        
+        if (!table || table.status !== 'occupied') return res.status(400).json({ error: "Mesa no disponible para cerrar" });
+
+        // Create Order from Table
+        const newOrder = new Order({
+            customId: `TBL-${Date.now()}`,
+            customer: {
+                name: `Cliente Presencial - ${table.name}`,
+                address: 'En Restaurante',
+                paymentMethod: 'Efectivo/Tarjeta',
+                notes: `Mesa cerrada a las ${new Date().toLocaleTimeString()}`
+            },
+            // Map table items to order items schema if needed, but structure is similar
+            items: table.items.map(i => ({
+                id: i.id,
+                name: i.name,
+                price: i.price,
+                quantity: i.quantity,
+                // We miss product ObjectId reference here if we only stored numeric ID in table
+                // Ideally look it up again, but for now we rely on numeric ID or allow missing ref
+            })), 
+            total: table.total,
+            status: 'completed', 
+            receivedAt: new Date(),
+            table: table._id,
+            type: 'dine-in'
+        });
+
+        await newOrder.save();
+        
+        table.status = 'free';
+        table.items = [];
+        table.total = 0;
+        table.startTime = null;
+        await table.save();
+
+        const allTables = await Table.find().sort({ id: 1 });
+        io.emit('tables-updated', allTables);
+        io.emit('sales-updated'); 
+        io.emit('new-order', newOrder); 
+        
+        res.json({ success: true, order: newOrder });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/sales', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    try {
+        // Fetch all completed orders
+        const orders = await Order.find({ status: { $in: ['completed', 'delivered'] } });
+        const receipts = await Receipt.find();
+        const users = await User.find(); // for driver names
+
+        const productStats = {};
+        const driverStats = {}; 
+        let ordersTotal = 0;
+
+        orders.forEach(order => {
+            ordersTotal += (order.total || 0);
+
+             // Product Stats
+            if (order.items) {
+                order.items.forEach(item => {
+                    const key = item.name;
+                    if (!productStats[key]) productStats[key] = { name: key, quantity: 0, revenue: 0 };
+                    productStats[key].quantity += item.quantity;
+                    productStats[key].revenue += (item.price * item.quantity);
+                });
             }
-        }
-    });
+            
+            // Driver Stats
+            if (order.assignedTo) {
+                const driverUser = users.find(u => String(u._id) === String(order.assignedTo));
+                const driverName = driverUser ? driverUser.username : 'Unknown';
+                
+                if (!driverStats[driverName]) driverStats[driverName] = { name: driverName, count: 0, revenue: 0 };
+                
+                if (order.status === 'delivered' || order.status === 'completed') {
+                    driverStats[driverName].count += 1;
+                    driverStats[driverName].revenue += order.total;
+                }
+            }
+        });
 
-    const receiptsTotal = receipts.reduce((sum, r) => sum + r.amount, 0);
-    const globalTotal = ordersTotal + receiptsTotal;
-    const topProducts = Object.values(productStats).sort((a, b) => b.quantity - a.quantity);
-    const topDrivers = Object.values(driverStats).sort((a, b) => b.count - a.count);
+        const receiptsTotal = receipts.reduce((sum, r) => sum + r.amount, 0);
+        const globalTotal = ordersTotal + receiptsTotal;
+        const topProducts = Object.values(productStats).sort((a, b) => b.quantity - a.quantity);
+        const topDrivers = Object.values(driverStats).sort((a, b) => b.count - a.count);
 
-    res.json({ ordersTotal, receiptsTotal, globalTotal, topProducts, topDrivers, orders, receipts });
+        res.json({ ordersTotal, receiptsTotal, globalTotal, topProducts, topDrivers, orders, receipts });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'admin']), upload.single('image'), async (req, res) => {
@@ -539,16 +635,19 @@ app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'a
     try {
         logger.info(`Scanning receipt: ${req.file.path}`);
 
-        // Pre-process image with Sharp for better OCR
         const processedPath = `${req.file.path}-processed.png`;
         try {
-            await sharp(req.file.path)
-                .grayscale()
-                .normalize()
-                .sharpen()
-                .toFile(processedPath);
+            if (sharp) {
+                await sharp(req.file.path)
+                    .grayscale()
+                    .normalize()
+                    .sharpen()
+                    .toFile(processedPath);
+            } else {
+                 throw new Error("Sharp not available");
+            }
         } catch (sharpError) {
-             logger.error(`Sharp processing failed (using original): ${sharpError.message}`);
+             // logger.error(`Sharp processing failed (using original): ${sharpError.message}`);
              fs.copyFileSync(req.file.path, processedPath);
         }
 
@@ -556,23 +655,20 @@ app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'a
         const { data: { text } } = await worker.recognize(processedPath);
         await worker.terminate();
         
-        // Clean up processed file
         if (fs.existsSync(processedPath)) fs.unlinkSync(processedPath);
         
-        // OCR Logic
         const foundAmount = extraerMonto(text) || 0;
         const foundName = extraerNombre(text) || "Desconocido";
 
         const imageUrl = `http://localhost:3000/uploads/${req.file.filename}`;
         
-        // Return data for confirmation (Do not save to sales yet)
         res.json({
             success: true,
             detectedAmount: foundAmount,
             detectedName: foundName,
             textSnippet: text.substring(0, 100),
             imageUrl: imageUrl,
-            tempFilePath: req.file.path // Ideally use a temp ID/token, but path checks out for now
+            tempFilePath: req.file.path 
         });
 
     } catch (err) {
@@ -581,26 +677,27 @@ app.post('/api/scan-receipt', authenticateToken, authorizeRole(['repartidor', 'a
     }
 });
 
-// Confirm Receipt (Problem F - Step 2: Save)
-app.post('/api/confirm-receipt', authenticateToken, authorizeRole(['repartidor', 'admin']), (req, res) => {
+// Confirm Receipt
+app.post('/api/confirm-receipt', authenticateToken, authorizeRole(['repartidor', 'admin']), async (req, res) => {
     const { amount, imageUrl, text } = req.body;
     
     if (!amount || isNaN(amount)) return res.status(400).json({ error: "Monto inválido" });
 
-    const receipt = {
-        id: Date.now().toString(),
-        amount: Number(amount),
-        text: text || "Manual Entry",
-        imageUrl: imageUrl,
-        timestamp: new Date().toISOString(),
-        uploadedBy: req.user.username
-    };
-    
-    receipts.push(receipt);
-    io.emit('sales-updated');
-    logger.info(`Receipt confirmed by ${req.user.username}: $${amount}`);
-    
-    res.json({ success: true, receipt });
+    try {
+        const receipt = await Receipt.create({
+            amount: Number(amount),
+            text: text || "Manual Entry",
+            imageUrl: imageUrl,
+            uploadedBy: req.user.username
+        });
+        
+        io.emit('sales-updated');
+        logger.info(`Receipt confirmed by ${req.user.username}: $${amount}`);
+        
+        res.json({ success: true, receipt });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // Variable para simular el acumulado (en producción iría a la DB)
