@@ -106,7 +106,7 @@ const authorizeRole = (roles) => (req, res, next) => {
     next();
 };
 
-app.use('/uploads', authenticateToken, express.static(uploadDir));
+app.use('/uploads', express.static(uploadDir));
 
 // --- VALIDATION SCHEMAS ---
 const orderSchema = z.object({
@@ -301,12 +301,20 @@ app.post('/api/status', authenticateToken, authorizeRole(['admin']), (req, res) 
     res.json(restaurantStatus);
 });
 
-app.post('/api/products', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+app.post('/api/products', authenticateToken, authorizeRole(['admin']), upload.single('image'), async (req, res) => {
     try {
         const lastProduct = await Product.findOne().sort({ id: -1 });
         const nextId = (lastProduct && lastProduct.id) ? lastProduct.id + 1 : 1;
         
-        const newProduct = await Product.create({ ...req.body, id: nextId });
+        let productData = { ...req.body, id: nextId };
+        
+        // Handle image upload
+        if (req.file) {
+             const imageUrl = `/uploads/${req.file.filename}`;
+             productData.image = imageUrl;
+        }
+
+        const newProduct = await Product.create(productData);
         syncMenuToCloud();
         res.json(newProduct);
     } catch (e) {
@@ -314,10 +322,17 @@ app.post('/api/products', authenticateToken, authorizeRole(['admin']), async (re
     }
 });
 
-app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+app.put('/api/products/:id', authenticateToken, authorizeRole(['admin']), upload.single('image'), async (req, res) => {
     const { id } = req.params; // numeric ID
     try {
-        const updated = await Product.findOneAndUpdate({ id: Number(id) }, req.body, { new: true });
+        let updateData = { ...req.body };
+         // Handle image upload
+         if (req.file) {
+             const imageUrl = `/uploads/${req.file.filename}`;
+             updateData.image = imageUrl;
+        }
+
+        const updated = await Product.findOneAndUpdate({ id: Number(id) }, updateData, { new: true });
         if (updated) {
             syncMenuToCloud();
             res.json(updated);

@@ -4,8 +4,9 @@ import { io } from 'socket.io-client';
 import { Clock, CheckCircle, MapPin, Phone, LogOut, TrendingUp, LayoutGrid, Users, Utensils } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
+import { API_URL } from '../config';
 
-const socket = io('http://localhost:3000'); // Connect to backend
+const socket = io(API_URL); 
 
 const Kitchen = () => {
   const [orders, setOrders] = useState([]);
@@ -15,7 +16,7 @@ const Kitchen = () => {
 
   useEffect(() => {
     // Load initial orders
-    fetch('http://localhost:3000/api/orders', {
+    fetch(`${API_URL}/api/orders`, {
         headers: { 'Authorization': `Bearer ${user?.token}` }
     })
       .then(res => res.json())
@@ -24,7 +25,7 @@ const Kitchen = () => {
 
     // Load Repartidores
     if (user?.role === 'admin' || user?.role === 'cocina') {
-        fetch('http://localhost:3000/api/repartidores', {
+        fetch(`${API_URL}/api/repartidores`, {
             headers: { 'Authorization': `Bearer ${user?.token}` }
         })
         .then(res => res.json())
@@ -33,7 +34,7 @@ const Kitchen = () => {
 
         // Load Tables for Admin AND Cocina context
         if (user?.role === 'admin' || user?.role === 'cocina') {
-            fetch('http://localhost:3000/api/tables', {
+            fetch(`${API_URL}/api/tables`, {
                 headers: { 'Authorization': `Bearer ${user?.token}` }
             })
             .then(res => res.json())
@@ -68,7 +69,7 @@ const Kitchen = () => {
   }, [user]);
 
   const updateStatus = (id, status) => {
-      fetch(`http://localhost:3000/api/orders/${id}/status`, {
+      fetch(`${API_URL}/api/orders/${id}/status`, {
           method: 'PUT',
           headers: { 
             'Content-Type': 'application/json',
@@ -79,7 +80,7 @@ const Kitchen = () => {
   };
 
   const assignOrder = (orderId, repartidorId) => {
-      fetch(`http://localhost:3000/api/orders/${orderId}/assign`, {
+      fetch(`${API_URL}/api/orders/${orderId}/assign`, {
           method: 'PUT',
           headers: { 
               'Content-Type': 'application/json',

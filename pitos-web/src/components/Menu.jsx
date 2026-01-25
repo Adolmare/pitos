@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Star, Plus } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { getImageUrl } from '../utils/imageUrl';
 
 const Menu = () => {
   const [activeCategory, setActiveCategory] = useState({ id: 'Todos' });
@@ -77,7 +78,7 @@ const Menu = () => {
               <div className="relative h-64 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10 opacity-60" />
                 <img 
-                  src={item.image} 
+                  src={getImageUrl(item.image)} 
                   alt={item.name} 
                   loading="lazy"
                   decoding="async"

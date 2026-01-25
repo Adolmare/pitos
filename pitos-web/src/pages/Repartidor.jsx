@@ -13,6 +13,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { API_URL } from '../config';
 
 ChartJS.register(
   CategoryScale,
@@ -41,7 +42,7 @@ const Repartidor = () => {
         if (user?.role === 'admin') {
             fetchStats();
         } else if (view === 'orders') {
-            fetch('http://localhost:3000/api/orders', {
+            fetch(`${API_URL}/api/orders`, {
                 headers: { 'Authorization': `Bearer ${user?.token}` }
             })
             .then(res => res.json())
@@ -52,7 +53,7 @@ const Repartidor = () => {
 
     const fetchStats = async () => {
         try {
-            const response = await fetch('http://localhost:3000/api/sales', {
+            const response = await fetch(`${API_URL}/api/sales`, {
                 headers: { 'Authorization': `Bearer ${user.token}` }
             });
             if (response.ok) {
@@ -231,7 +232,7 @@ const Repartidor = () => {
         formData.append('image', file);
 
         try {
-            const response = await fetch('http://localhost:3000/api/scan-receipt', {
+            const response = await fetch(`${API_URL}/api/scan-receipt`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${user.token}` },
                 body: formData,
@@ -260,7 +261,7 @@ const Repartidor = () => {
 
         setLoading(true);
         try {
-            const response = await fetch('http://localhost:3000/api/confirm-receipt', {
+            const response = await fetch(`${API_URL}/api/confirm-receipt`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -292,7 +293,7 @@ const Repartidor = () => {
     };
 
     const updateStatus = (orderId, newStatus) => {
-        fetch(`http://localhost:3000/api/orders/${orderId}/status`, {
+        fetch(`${API_URL}/api/orders/${orderId}/status`, {
             method: 'PUT',
             headers: { 
                 'Content-Type': 'application/json',

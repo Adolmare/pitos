@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit, Trash, X, Save, ArrowLeft, Utensils } from 'lucide-react';
+import { Plus, Edit, Trash, X, Save, ArrowLeft, Utensils, UploadCloud } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { API_URL } from '../config';
+import { getImageUrl } from '../utils/imageUrl';
 
 const Products = () => {
     const [products, setProducts] = useState([]);
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
+    const [editFile, setEditFile] = useState(null);
     const [isAdding, setIsAdding] = useState(false);
-    const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Pizzas', description: '', image: '' });
+    const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Pizzas', description: '' });
+    const [newFile, setNewFile] = useState(null);
     const { user } = useAuth();
 
     const fetchProducts = async () => {
-        const res = await fetch('http://localhost:3000/api/products');
+        const res = await fetch(`${API_URL}/api/products`);
         const data = await res.json();
         setProducts(data);
     };
@@ -24,24 +28,34 @@ const Products = () => {
     const handleEditClick = (product) => {
         setEditingId(product.id);
         setEditForm(product);
+        setEditFile(null); 
     };
 
     const handleUpdate = async () => {
-        await fetch(`http://localhost:3000/api/products/${editingId}`, {
+        const formData = new FormData();
+        formData.append('name', editForm.name);
+        formData.append('price', editForm.price);
+        formData.append('category', editForm.category);
+        formData.append('description', editForm.description || '');
+        if (editFile) {
+            formData.append('image', editFile);
+        }
+
+        await fetch(`${API_URL}/api/products/${editingId}`, {
             method: 'PUT',
             headers: { 
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${user.token}`
             },
-            body: JSON.stringify(editForm)
+            body: formData
         });
         setEditingId(null);
+        setEditFile(null);
         fetchProducts();
     };
 
     const handleDelete = async (id) => {
         if (window.confirm('¿Seguro que quieres eliminar este producto?')) {
-            await fetch(`http://localhost:3000/api/products/${id}`, {
+            await fetch(`${API_URL}/api/products/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${user.token}` }
             });
@@ -51,19 +65,26 @@ const Products = () => {
 
     const handleCreate = async (e) => {
         e.preventDefault();
-        await fetch('http://localhost:3000/api/products', {
+        
+        const formData = new FormData();
+        formData.append('name', newProduct.name);
+        formData.append('price', newProduct.price);
+        formData.append('category', newProduct.category);
+        formData.append('description', newProduct.description || '');
+        if (newFile) {
+            formData.append('image', newFile);
+        }
+
+        await fetch(`${API_URL}/api/products`, {
             method: 'POST',
             headers: { 
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${user.token}`
             },
-            body: JSON.stringify({
-                ...newProduct,
-                price: parseFloat(newProduct.price)
-            })
+            body: formData
         });
         setIsAdding(false);
-        setNewProduct({ name: '', price: '', category: 'Pizzas', description: '', image: '' });
+        setNewProduct({ name: '', price: '', category: 'Pizzas', description: '' });
+        setNewFile(null);
         fetchProducts();
     };
 
@@ -119,12 +140,17 @@ const Products = () => {
                                 <option>Bebidas</option>
                                 <option>Postres</option>
                             </select>
-                            <input 
-                                placeholder="URL Imagen" 
-                                value={newProduct.image}
-                                onChange={e => setNewProduct({...newProduct, image: e.target.value})}
-                                className="bg-neutral-900 border border-neutral-700 p-2 rounded text-white"
-                            />
+                            
+                            <div className="bg-neutral-900 border border-neutral-700 p-2 rounded text-white flex items-center gap-2">
+                                <UploadCloud size={20} className="text-gray-400" />
+                                <input 
+                                    type="file" 
+                                    accept="image/*"
+                                    onChange={e => setNewFile(e.target.files[0])}
+                                    className="bg-transparent text-sm w-full focus:outline-none file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-yellow-500 file:text-black hover:file:bg-yellow-400"
+                                />
+                            </div>
+
                             <textarea
                                 placeholder="Descripción"
                                 value={newProduct.description}
@@ -155,6 +181,20 @@ const Products = () => {
                                         onChange={e => setEditForm({...editForm, price: parseFloat(e.target.value)})}
                                         className="w-full bg-neutral-900 p-2 rounded text-white"
                                     />
+                                     <div className="bg-neutral-900 border border-neutral-700 p-2 rounded text-white">
+                                        <p className="text-xs text-gray-400 mb-1">Cambiar Imagen (Opcional)</p>
+                                        <input 
+                                            type="file" 
+                                            accept="image/*"
+                                            onChange={e => setEditFile(e.target.files[0])}
+                                            className="w-full text-xs text-slate-500
+                                            file:mr-4 file:py-2 file:px-4
+                                            file:rounded-full file:border-0
+                                            file:text-xs file:font-semibold
+                                            file:bg-violet-50 file:text-violet-700
+                                            hover:file:bg-violet-100"
+                                        />
+                                    </div>
                                     <textarea 
                                         value={editForm.description} 
                                         onChange={e => setEditForm({...editForm, description: e.target.value})}
@@ -169,7 +209,7 @@ const Products = () => {
                             ) : (
                                 <>
                                     <div className="h-48 overflow-hidden relative">
-                                        <img src={product.image || 'https://via.placeholder.com/300'} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                        <img src={getImageUrl(product.image)} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                         <div className="absolute top-2 right-2 flex gap-2">
                                             <button onClick={() => handleEditClick(product)} className="p-2 bg-black/50 text-white rounded-full hover:bg-yellow-500 hover:text-black transition-colors">
                                                 <Edit size={16} />

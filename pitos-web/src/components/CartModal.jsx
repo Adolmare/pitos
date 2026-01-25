@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trash2, Plus, Minus, MapPin, Navigation, ShoppingBag, ArrowLeft, CheckCircle } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { getImageUrl } from '../utils/imageUrl';
 
 const CartModal = () => {
   const { 
@@ -121,7 +122,7 @@ const CartModal = () => {
         }
     } catch (error) {
         console.error("Order submission error:", error);
-        alert('❌ Error al conectar con el servidor. Asegúrate de que el backend esté corriendo en http://localhost:3000');
+        alert(`❌ Error al conectar con el servidor. Asegúrate de que el backend esté corriendo en ${import.meta.env.VITE_API_URL}`);
     }
   };
 
@@ -188,7 +189,7 @@ const CartModal = () => {
                         key={item.id} 
                         className="flex gap-4 bg-white/5 p-4 rounded-xl border border-white/5"
                     >
-                        <img src={item.image} alt={item.name} className="w-20 h-20 object-cover rounded-lg" />
+                        <img src={getImageUrl(item.image)} alt={item.name} className="w-20 h-20 object-cover rounded-lg" />
                         <div className="flex-1">
                         <h3 className="font-bold text-lg leading-tight mb-1">{item.name}</h3>
                         <p className="text-yellow-500 font-bold">${item.price.toLocaleString()}</p>

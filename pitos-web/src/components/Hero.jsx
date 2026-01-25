@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { API_URL } from '../config';
 
 const Hero = () => {
   const [isRestaurantOpen, setIsRestaurantOpen] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/status')
+    fetch(`${API_URL}/api/status`)
       .then(res => res.json())
       .then(data => setIsRestaurantOpen(data.isOpen))
       .catch(err => console.error(err));
 
       // Poll status every 30s to keep it updated for users
       const interval = setInterval(() => {
-        fetch('http://localhost:3000/api/status')
+        fetch(`${API_URL}/api/status`)
         .then(res => res.json())
         .then(data => setIsRestaurantOpen(data.isOpen))
         .catch(err => console.error(err));

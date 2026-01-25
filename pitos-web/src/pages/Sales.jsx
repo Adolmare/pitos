@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import { ArrowLeft, Calendar, DollarSign, Download, Filter } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -25,7 +26,7 @@ ChartJS.register(
   Legend
 );
 
-const socket = io('http://localhost:3000');
+const socket = io(API_URL);
 
 const Sales = () => {
     const { logout } = useAuth();
@@ -55,7 +56,7 @@ const Sales = () => {
     const fetchSales = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/sales', { 
+            const res = await fetch(`${API_URL}/api/sales`, { 
                 headers: { 'Authorization': `Bearer ${token}` } 
             });
             if (res.ok) {

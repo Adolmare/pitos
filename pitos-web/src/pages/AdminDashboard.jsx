@@ -16,16 +16,20 @@ import {
   CategoryScale,
   LinearScale,
   BarElement,
+  PointElement,
+  LineElement,
   Title,
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Bar } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   BarElement,
+  PointElement,
+  LineElement,
   Title,
   Tooltip,
   Legend
@@ -37,7 +41,8 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState({
     ordersTotal: 0,
     topProducts: [],
-    topDrivers: []
+    topDrivers: [],
+    orders: []
   });
   const [isRestaurantOpen, setIsRestaurantOpen] = useState(true);
 
@@ -102,6 +107,27 @@ const AdminDashboard = () => {
     navigate('/login');
   };
 
+  // Helper to process sales over time (last 7 data points)
+  const processSalesData = () => {
+    if (!stats.orders || stats.orders.length === 0) return { labels: [], data: [] };
+    
+    // Group by Date (YYYY-MM-DD)
+    const salesByDate = {};
+    stats.orders.forEach(order => {
+        const date = new Date(order.receivedAt).toLocaleDateString();
+        if (!salesByDate[date]) salesByDate[date] = 0;
+        salesByDate[date] += (order.total || 0);
+    });
+
+    const sortedDates = Object.keys(salesByDate).sort((a,b) => new Date(a) - new Date(b)).slice(-7);
+    return {
+        labels: sortedDates,
+        data: sortedDates.map(date => salesByDate[date])
+    };
+  };
+
+  const salesTrend = processSalesData();
+
   // Chart Data Configuration
   const productChartData = {
     labels: stats.topProducts.slice(0, 5).map(p => p.name),
@@ -129,21 +155,43 @@ const AdminDashboard = () => {
     ],
   };
 
+  const salesChartData = {
+      labels: salesTrend.labels,
+      datasets: [
+          {
+              label: 'Ventas ($)',
+              data: salesTrend.data,
+              borderColor: 'rgb(255, 205, 86)',
+              backgroundColor: 'rgba(255, 205, 86, 0.5)',
+              tension: 0.3
+          }
+      ]
+  };
+
   const chartOptions = {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: {
-      legend: { position: 'top' },
+      legend: { position: 'top', labels: { color: 'white' } },
       title: { display: false },
     },
     scales: {
-      y: { beginAtZero: true }
+      y: { 
+          beginAtZero: true,
+          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          ticks: { color: 'gray' }
+      },
+      x: {
+          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          ticks: { color: 'gray' }
+      }
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans">
       {/* Navbar */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-lg">
+      <div className="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-blue-600 rounded-lg">
             <LayoutGrid size={24} className="text-white" />
@@ -157,13 +205,13 @@ const AdminDashboard = () => {
           >
             <span>{isRestaurantOpen ? 'ABIERTO' : 'CERRADO'}</span>
           </button>
-          <span className="text-gray-400">Hola, {user?.username}</span>
+          <span className="text-gray-400 font-medium">Hola, {user?.username}</span>
           <button 
             onClick={handleLogout}
             className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition-colors"
           >
             <LogOut size={18} />
-            <span>Salir</span>
+            <span className="hidden md:inline">Salir</span>
           </button>
         </div>
       </div>
@@ -172,18 +220,18 @@ const AdminDashboard = () => {
         
         {/* Navigation Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Link to="/ventas" className="bg-gray-800 p-6 rounded-xl border border-gray-700 hover:border-blue-500 transition-all shadow-lg hover:shadow-blue-500/20 group">
+          <Link to="/sales" className="bg-gray-800 p-6 rounded-xl border border-gray-700 hover:border-blue-500 transition-all shadow-lg hover:shadow-blue-500/20 group">
             <div className="flex items-center justify-between mb-4">
               <div className="p-3 bg-blue-900/50 rounded-lg text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                 <DollarSign size={28} />
               </div>
               <span className="text-gray-400 text-sm">Finanzas</span>
             </div>
-            <h3 className="text-xl font-semibold mb-1">Ventas & Reportes</h3>
+            <h3 className="text-xl font-semibold mb-1">Ventas Detalladas</h3>
             <p className="text-gray-400 text-sm">Ver ingresos y detalles de caja</p>
           </Link>
 
-          <Link to="/cocina" className="bg-gray-800 p-6 rounded-xl border border-gray-700 hover:border-orange-500 transition-all shadow-lg hover:shadow-orange-500/20 group">
+          <Link to="/kitchen" className="bg-gray-800 p-6 rounded-xl border border-gray-700 hover:border-orange-500 transition-all shadow-lg hover:shadow-orange-500/20 group">
             <div className="flex items-center justify-between mb-4">
               <div className="p-3 bg-orange-900/50 rounded-lg text-orange-400 group-hover:bg-orange-600 group-hover:text-white transition-colors">
                 <UtensilsCrossed size={28} />
@@ -218,26 +266,46 @@ const AdminDashboard = () => {
         </div>
 
         {/* Analytics Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          {/* Top Products */}
-          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg col-span-2">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold flex items-center gap-2">
-                <ShoppingBag className="text-blue-500" />
-                Platos Más Vendidos
-              </h2>
-            </div>
-            <div className="h-64 flex justify-center">
-              {stats.topProducts.length > 0 ? (
-                <Bar options={chartOptions} data={productChartData} />
-              ) : (
-                <div className="flex items-center justify-center text-gray-500">
-                  Sin datos suficientes
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            
+            {/* Sales Trend Chart */}
+            <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg col-span-1 lg:col-span-2">
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-bold flex items-center gap-2">
+                        <TrendingUp className="text-yellow-500" />
+                        Tendencia de Ventas (Últimos 7 días con actividad)
+                    </h2>
                 </div>
-              )}
+                <div className="h-72">
+                    <Line options={chartOptions} data={salesChartData} />
+                </div>
             </div>
-          </div>
+
+            {/* Top Products */}
+            <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg">
+                <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                    <ShoppingBag className="text-blue-500" />
+                    Platos Más Vendidos
+                </h2>
+                </div>
+                <div className="h-64">
+                    <Bar options={chartOptions} data={productChartData} />
+                </div>
+            </div>
+
+             {/* Driver Performance */}
+             <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg">
+                <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                    <Bike className="text-emerald-500" />
+                    Rendimiento de Repartidores
+                </h2>
+                </div>
+                <div className="h-64">
+                     <Bar options={chartOptions} data={driverChartData} />
+                </div>
+            </div>
         </div>
       </div>
     </div>

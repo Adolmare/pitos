@@ -3,8 +3,9 @@ import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { CheckCircle, XCircle, Coffee, DollarSign, Plus, Trash2, ArrowLeft, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { API_URL } from '../config';
 
-const socket = io('http://localhost:3000');
+const socket = io(API_URL);
 
 const Tables = () => {
     const { user, logout } = useAuth();
@@ -35,7 +36,7 @@ const Tables = () => {
 
     const fetchTables = async () => {
         try {
-             const res = await fetch('http://localhost:3000/api/tables', {
+             const res = await fetch(`${API_URL}/api/tables`, {
                 headers: { 'Authorization': `Bearer ${user.token}` }
              });
              if (res.ok) setTables(await res.json());
@@ -46,7 +47,7 @@ const Tables = () => {
 
     const fetchProducts = async () => {
         try {
-            const res = await fetch('http://localhost:3000/api/products');
+            const res = await fetch(`${API_URL}/api/products`);
             if (res.ok) setProducts(await res.json());
         } catch (err) {
             console.error(err);
@@ -56,7 +57,7 @@ const Tables = () => {
     const handleOccupy = async (tableId) => {
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:3000/api/tables/${tableId}/occupy`, {
+            const res = await fetch(`${API_URL}/api/tables/${tableId}/occupy`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${user.token}` }
             });
@@ -74,7 +75,7 @@ const Tables = () => {
     const handleAddItem = async (productId) => {
         if (!selectedTable) return;
         try {
-            const res = await fetch(`http://localhost:3000/api/tables/${selectedTable.id}/add-item`, {
+            const res = await fetch(`${API_URL}/api/tables/${selectedTable.id}/add-item`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -100,7 +101,7 @@ const Tables = () => {
 
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:3000/api/tables/${selectedTable.id}/close`, {
+            const res = await fetch(`${API_URL}/api/tables/${selectedTable.id}/close`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${user.token}` }
             });
